@@ -1,0 +1,393 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Lintty — Arquitetura como evidência</title>
+  <meta name="description" content="Lintty analisa solutions .NET com Roslyn type-aware e emite um laudo PDF assinado digitalmente que vale como evidência de aceite — sem mediação humana, sem opinião subjetiva." />
+  <meta name="theme-color" content="#0f4c3a" />
+
+  <!-- Open Graph / social preview -->
+  <meta property="og:title" content="Lintty — Arquitetura como evidência" />
+  <meta property="og:description" content="Auditoria automatizada para entregas de software .NET. Laudo PDF assinado como evidência de aceite." />
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://lintty.com/" />
+  <meta property="og:image" content="/assets/og-image.svg" />
+  <meta name="twitter:card" content="summary_large_image" />
+
+  <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+  <link rel="canonical" href="https://lintty.com/" />
+
+  <!-- Tailwind via CDN: aceitavel no Sales Cut Tier 1. Substituir por build dedicado em V1. -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: '#0a0a0a',
+            paper: '#fafaf9',
+            saint: '#0f4c3a',
+            'saint-bg': '#ecf5f0',
+            sinner: '#7a1f1f',
+            'sinner-bg': '#f8eded',
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+            mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Consolas', 'monospace'],
+          },
+          maxWidth: {
+            'prose-tight': '60ch',
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Inter via Google Fonts: subset latin, swap, preconnect para nao bloquear render. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style>
+    html { scroll-behavior: smooth; }
+    body { font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+    /* Code snippets: leve, sem decoracao. */
+    pre.snippet {
+      background: #f4f4f3;
+      border: 1px solid #e5e5e3;
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-size: 13px;
+      line-height: 1.55;
+      overflow-x: auto;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      color: #1f1f1f;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-weight: 600;
+      font-size: 12px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border-radius: 999px;
+    }
+    .badge-saint { background: #0f4c3a; color: #fff; }
+    .badge-sinner { background: #7a1f1f; color: #fff; }
+    /* Subtle skip-link for a11y. */
+    .skip { position: absolute; left: -9999px; }
+    .skip:focus { left: 1rem; top: 1rem; background: #000; color: #fff; padding: 8px 12px; border-radius: 4px; z-index: 50; }
+  </style>
+</head>
+<body class="bg-paper text-ink antialiased">
+
+  <a href="#main" class="skip">Pular para o conteudo</a>
+
+  <!-- ===== Header ===== -->
+  <header class="border-b border-neutral-200 bg-white/80 backdrop-blur sticky top-0 z-30">
+    <div class="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+      <a href="/" class="flex items-center gap-2 font-semibold text-lg tracking-tight">
+        <img src="/assets/lintty-logo.png" alt="Lintty"
+             width="32" height="32"
+             class="w-8 h-8 object-contain" />
+        <span>Lintty</span>
+      </a>
+      <nav class="hidden md:flex items-center gap-8 text-sm text-neutral-700">
+        <a href="#como-funciona" class="hover:text-ink">Como funciona</a>
+        <a href="#saint-vs-sinner" class="hover:text-ink">Saint vs Sinner</a>
+        <a href="#defensibilidade" class="hover:text-ink">Defensibilidade</a>
+        <a href="#contato"
+           class="px-4 py-2 rounded-md bg-ink text-white hover:bg-neutral-800 transition">
+          Solicite uma demo
+        </a>
+      </nav>
+      <a href="#contato" class="md:hidden px-3 py-2 rounded-md bg-ink text-white text-sm">Demo</a>
+    </div>
+  </header>
+
+  <main id="main">
+
+    <!-- ===== Hero ===== -->
+    <section class="px-6 py-20 md:py-28">
+      <div class="max-w-6xl mx-auto grid md:grid-cols-12 gap-12 items-center">
+        <div class="md:col-span-7">
+          <p class="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-5">
+            Auditoria automatizada para entregas .NET
+          </p>
+          <h1 class="text-4xl md:text-5xl lg:text-6xl font-bold leading-[1.05] tracking-tight">
+            Arquitetura como evidencia.<br />
+            <span class="text-neutral-700">Auditoria automatizada para entregas de software .NET.</span>
+          </h1>
+          <p class="mt-6 text-lg text-neutral-700 max-w-2xl">
+            Lintty analisa solutions .NET com Roslyn type-aware e emite um laudo PDF assinado
+            digitalmente que vale como evidencia de aceite &mdash; sem mediacao humana,
+            sem opiniao subjetiva.
+          </p>
+          <div class="mt-8 flex flex-wrap gap-3">
+            <!--
+              CTA primario: hoje aponta para mailto: como fallback do Sales Cut.
+              Substituicao por Tally/Formspree e trivial: troque o href por
+              https://tally.so/r/XXXX ou https://formspree.io/f/XXXX e remova subject/body.
+            -->
+            <a href="mailto:contato@lintty.com?subject=Demo%20Lintty&body=Empresa:%0AContato:%0AStack:%0A"
+               class="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-ink text-white font-semibold hover:bg-neutral-800 transition">
+              Solicite uma demo
+              <span aria-hidden="true">&rarr;</span>
+            </a>
+            <a href="#como-funciona"
+               class="inline-flex items-center gap-2 px-6 py-3 rounded-md border border-neutral-300 text-neutral-800 font-medium hover:bg-neutral-100 transition">
+              Como funciona
+            </a>
+          </div>
+          <p class="mt-6 text-sm text-neutral-500">
+            Sem free trial. Sem signup self-service. Conversa comercial direta.
+          </p>
+        </div>
+
+        <!-- Mock visual da capa do laudo: SVG inline para zero peso e perfeito em qualquer DPI. -->
+        <div class="md:col-span-5">
+          <div class="relative">
+            <div class="absolute -inset-4 bg-gradient-to-br from-neutral-200 to-neutral-100 rounded-2xl rotate-1" aria-hidden="true"></div>
+            <article class="relative bg-white border border-neutral-300 rounded-xl shadow-sm p-7"
+                     aria-label="Mock da capa do laudo PDF">
+              <div class="flex items-center justify-between text-xs text-neutral-500 mb-6">
+                <span class="font-mono">LAUDO #2026-04-27-0001</span>
+                <span>Lintty Canon v1.0.0</span>
+              </div>
+              <p class="text-xs uppercase tracking-widest text-neutral-500">Score</p>
+              <div class="flex items-baseline gap-3 mt-1">
+                <span class="text-7xl font-bold text-sinner leading-none">F</span>
+                <span class="text-sm text-neutral-600">9 violacoes &middot; 3 hard locks</span>
+              </div>
+              <div class="mt-5 inline-flex items-center gap-2 px-3 py-1.5 rounded-md bg-sinner-bg text-sinner text-sm font-semibold">
+                Selo NAO emitido
+              </div>
+              <hr class="my-6 border-neutral-200" />
+              <ul class="text-sm text-neutral-700 space-y-2">
+                <li class="flex gap-2"><span class="font-mono text-xs text-neutral-500 mt-0.5">LNTY-002</span> SQL na camada de dominio</li>
+                <li class="flex gap-2"><span class="font-mono text-xs text-neutral-500 mt-0.5">LNTY-007</span> Ciclo Application &harr; Infrastructure</li>
+                <li class="flex gap-2"><span class="font-mono text-xs text-neutral-500 mt-0.5">LNTY-003</span> Mutavel exposto em agregado</li>
+              </ul>
+              <p class="mt-6 text-xs text-neutral-500">
+                PDF deterministico &middot; sha256 no rodape &middot; PAdES-B-LT em V1
+              </p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Como funciona ===== -->
+    <section id="como-funciona" class="px-6 py-20 bg-white border-y border-neutral-200">
+      <div class="max-w-6xl mx-auto">
+        <header class="max-w-3xl">
+          <p class="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-3">Como funciona</p>
+          <h2 class="text-3xl md:text-4xl font-bold tracking-tight">Tres passos. Sem dashboard intermediario.</h2>
+        </header>
+
+        <div class="mt-12 grid md:grid-cols-3 gap-6">
+          <!-- Passo 1 -->
+          <article class="border border-neutral-200 rounded-xl p-7 bg-paper">
+            <div class="flex items-center gap-3 mb-4">
+              <span class="w-9 h-9 rounded-md bg-ink text-white flex items-center justify-center font-mono text-sm">01</span>
+              <span aria-hidden="true" class="font-mono text-neutral-400">&lt;/&gt;</span>
+            </div>
+            <h3 class="font-semibold text-lg">Code</h3>
+            <p class="mt-2 text-neutral-700 text-sm leading-relaxed">
+              A agencia entrega a solution .NET via repositorio GitHub. Lintty roda no Milestone
+              solicitado pelo contratante.
+            </p>
+          </article>
+
+          <!-- Passo 2 -->
+          <article class="border border-neutral-200 rounded-xl p-7 bg-paper">
+            <div class="flex items-center gap-3 mb-4">
+              <span class="w-9 h-9 rounded-md bg-ink text-white flex items-center justify-center font-mono text-sm">02</span>
+              <span aria-hidden="true" class="font-mono text-neutral-400">&#x25BD;</span>
+            </div>
+            <h3 class="font-semibold text-lg">Analise Roslyn type-aware</h3>
+            <p class="mt-2 text-neutral-700 text-sm leading-relaxed">
+              Motor type-aware analisa camadas, dependencias, isolamento de dominio, ciclos de projeto.
+              <strong>100% deterministico:</strong> mesmo codigo &rarr; mesmo veredito, sempre.
+              Zero alucinacao por design &mdash; nenhuma camada de LLM no pipeline V0.
+            </p>
+          </article>
+
+          <!-- Passo 3 -->
+          <article class="border border-neutral-200 rounded-xl p-7 bg-paper">
+            <div class="flex items-center gap-3 mb-4">
+              <span class="w-9 h-9 rounded-md bg-ink text-white flex items-center justify-center font-mono text-sm">03</span>
+              <span aria-hidden="true" class="font-mono text-neutral-400">&#x1F4C4;</span>
+            </div>
+            <h3 class="font-semibold text-lg">Laudo PDF deterministico</h3>
+            <p class="mt-2 text-neutral-700 text-sm leading-relaxed">
+              PDF gerado pelo proprio motor via QuestPDF &mdash; fontes embedded, determinismo
+              bit-a-bit. Contem score, violacoes com snippet, sumario de excecoes, grafo de
+              dependencias e <code class="font-mono text-xs">hash_pdf</code> sha256 no rodape.
+              Assinatura PAdES-B-LT + TSA RFC 3161 entram no roadmap V1.
+            </p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Saint vs Sinner ===== -->
+    <section id="saint-vs-sinner" class="px-6 py-20">
+      <div class="max-w-6xl mx-auto">
+        <header class="max-w-3xl">
+          <p class="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-3">Saint vs Sinner</p>
+          <h2 class="text-3xl md:text-4xl font-bold tracking-tight">
+            O motor nao inventa problemas. E nao passa por cima dos reais.
+          </h2>
+          <p class="mt-4 text-neutral-700">
+            Dois fixtures publicos. Mesmo canon, decisoes opostas.
+          </p>
+        </header>
+
+        <div class="mt-12 grid md:grid-cols-2 gap-6">
+
+          <!-- Card Saint -->
+          <article class="rounded-xl border border-neutral-200 bg-saint-bg p-7">
+            <div class="flex items-center justify-between mb-4">
+              <span class="badge badge-saint">A &middot; 100/100</span>
+              <span class="text-xs text-neutral-500 font-mono">the-saint</span>
+            </div>
+            <h3 class="font-semibold text-lg">Dominio puro, agregado coeso</h3>
+            <pre class="snippet mt-4" aria-label="Snippet C# do fixture the-saint"><code>// Saint.Domain/Order.cs
+public sealed class Order
+{
+    private readonly List&lt;OrderLine&gt; _lines = new();
+    public IReadOnlyList&lt;OrderLine&gt; Lines =&gt;
+        new ReadOnlyCollection&lt;OrderLine&gt;(_lines);
+}</code></pre>
+            <p class="mt-4 text-sm text-neutral-700">
+              <strong>0 violacoes.</strong> Encapsulamento correto, sem leak mutavel,
+              sem dependencia de infra. Lintty nao cria ruido onde nao ha problema.
+            </p>
+          </article>
+
+          <!-- Card Sinner -->
+          <article class="rounded-xl border border-neutral-200 bg-sinner-bg p-7">
+            <div class="flex items-center justify-between mb-4">
+              <span class="badge badge-sinner">F &middot; Selo NAO emitido</span>
+              <span class="text-xs text-neutral-500 font-mono">the-sinner</span>
+            </div>
+            <h3 class="font-semibold text-lg">SQL na camada de dominio</h3>
+            <pre class="snippet mt-4" aria-label="Snippet C# do fixture the-sinner"><code>// Sinner.Domain/Customer.cs
+public string BuildLookupSql(int customerId)
+{
+    var sql = "SELECT * FROM Customers WHERE Id = " + customerId;
+    return sql;
+}</code></pre>
+            <p class="mt-4 text-sm text-neutral-700">
+              <strong>9 violacoes, 3 hard locks.</strong> SQL inline na camada de dominio
+              <span class="font-mono text-xs">(LNTY-002)</span>. Selo nao e emitido enquanto
+              hard lock nao for resolvido.
+            </p>
+          </article>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Defensibilidade ===== -->
+    <section id="defensibilidade" class="px-6 py-20 bg-ink text-white">
+      <div class="max-w-6xl mx-auto">
+        <header class="max-w-3xl">
+          <p class="text-xs font-semibold tracking-widest text-neutral-400 uppercase mb-3">Defensibilidade</p>
+          <h2 class="text-3xl md:text-4xl font-bold tracking-tight">
+            Por que Lintty nao e replicavel em um fim de semana.
+          </h2>
+        </header>
+
+        <ul class="mt-12 grid md:grid-cols-2 lg:grid-cols-5 gap-6">
+          <li class="rounded-xl border border-neutral-700 p-6">
+            <p class="text-xs font-mono text-neutral-400 mb-2">01</p>
+            <h3 class="font-semibold">Canon opinionado</h3>
+            <p class="mt-2 text-sm text-neutral-300">
+              Agencias aprendem a entregar &ldquo;no padrao Lintty&rdquo;. Network effect via padrao.
+            </p>
+          </li>
+          <li class="rounded-xl border border-neutral-700 p-6">
+            <p class="text-xs font-mono text-neutral-400 mb-2">02</p>
+            <h3 class="font-semibold">Determinismo bit-a-bit</h3>
+            <p class="mt-2 text-sm text-neutral-300">
+              Mesmo input &rarr; mesmo PDF, sempre. Zero alucinacao, zero custo de inferencia.
+              Type-aware Roslyn, sem IA no V0.
+            </p>
+          </li>
+          <li class="rounded-xl border border-neutral-700 p-6">
+            <p class="text-xs font-mono text-neutral-400 mb-2">03</p>
+            <h3 class="font-semibold">Analise efemera</h3>
+            <p class="mt-2 text-sm text-neutral-300">
+              Codigo processado localmente, nao persiste apos a analise. Sem third-party na cadeia V0.
+            </p>
+          </li>
+          <li class="rounded-xl border border-neutral-700 p-6">
+            <p class="text-xs font-mono text-neutral-400 mb-2">04</p>
+            <h3 class="font-semibold">Constant folding</h3>
+            <p class="mt-2 text-sm text-neutral-300">
+              Detecta SQL escondido por concat de constantes. Linter regex passa direto, Lintty pega.
+            </p>
+          </li>
+          <li class="rounded-xl border border-neutral-700 p-6">
+            <p class="text-xs font-mono text-neutral-400 mb-2">05</p>
+            <h3 class="font-semibold">Roadmap V1</h3>
+            <p class="mt-2 text-sm text-neutral-300">
+              PDF assinado (PAdES-B-LT + TSA), audit hash-chain imutavel, e LLM advogado de defesa
+              opcional sob ZDR Anthropic. Complemento, nao dependencia.
+            </p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ===== CTA final ===== -->
+    <section id="contato" class="px-6 py-24">
+      <div class="max-w-3xl mx-auto text-center">
+        <p class="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-3">Sales Cut Tier 1</p>
+        <h2 class="text-3xl md:text-4xl font-bold tracking-tight">
+          Lintty e a evidencia tecnica que o contrato pede.
+        </h2>
+        <p class="mt-5 text-neutral-700">
+          Nao somos escrow financeiro, nao somos arbitro juridico, nao ha revisao humana.
+          Somos o laudo que vai junto do aceite.
+        </p>
+        <div class="mt-8 flex flex-wrap justify-center gap-3">
+          <a href="mailto:contato@lintty.com?subject=Demo%20Lintty&body=Empresa:%0AContato:%0AStack:%0A"
+             class="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-ink text-white font-semibold hover:bg-neutral-800 transition">
+            Solicite uma demo
+            <span aria-hidden="true">&rarr;</span>
+          </a>
+          <a href="mailto:contato@lintty.com"
+             class="inline-flex items-center gap-2 px-6 py-3 rounded-md border border-neutral-300 text-neutral-800 font-medium hover:bg-neutral-100 transition">
+            contato@lintty.com
+          </a>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ===== Footer ===== -->
+  <footer class="border-t border-neutral-200 bg-white">
+    <div class="max-w-6xl mx-auto px-6 py-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+      <div class="flex items-center gap-2 text-sm text-neutral-600">
+        <img src="/assets/lintty-logo.png" alt="Lintty"
+             width="24" height="24"
+             class="w-6 h-6 object-contain" />
+        <span class="font-semibold text-ink">Lintty</span>
+        <span class="ml-3">&copy; 2026. Todos os direitos reservados.</span>
+      </div>
+      <nav class="flex items-center gap-6 text-sm text-neutral-700">
+        <a href="/privacidade.html" class="hover:text-ink">Privacidade</a>
+        <a href="mailto:contato@lintty.com" class="hover:text-ink">contato@lintty.com</a>
+      </nav>
+    </div>
+  </footer>
+
+</body>
+</html>

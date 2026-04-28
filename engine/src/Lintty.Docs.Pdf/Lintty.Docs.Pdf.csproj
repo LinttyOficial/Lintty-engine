@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>Lintty.Docs.Pdf</RootNamespace>
+    <AssemblyName>lintty-docs</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="QuestPDF" />
+    <PackageReference Include="System.CommandLine" />
+  </ItemGroup>
+
+  <!--
+    Reusing the TTF assets that already live in Lintty.Engine.Reporter/Resources/
+    via Link= avoids duplicating ~600 KB of fonts in source control. If the
+    Reporter ever moves these files, this Link target moves with it.
+  -->
+  <ItemGroup>
+    <EmbeddedResource Include="..\Lintty.Engine.Reporter\Resources\Inter-Regular.ttf"     Link="Resources\Inter-Regular.ttf" />
+    <EmbeddedResource Include="..\Lintty.Engine.Reporter\Resources\Inter-SemiBold.ttf"    Link="Resources\Inter-SemiBold.ttf" />
+    <EmbeddedResource Include="..\Lintty.Engine.Reporter\Resources\Inter-Bold.ttf"        Link="Resources\Inter-Bold.ttf" />
+    <EmbeddedResource Include="..\Lintty.Engine.Reporter\Resources\JetBrainsMono-Regular.ttf" Link="Resources\JetBrainsMono-Regular.ttf" />
+    <EmbeddedResource Include="..\Lintty.Engine.Reporter\Resources\JetBrainsMono-Bold.ttf"    Link="Resources\JetBrainsMono-Bold.ttf" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\lintty-logo.png" />
+  </ItemGroup>
+
+</Project>

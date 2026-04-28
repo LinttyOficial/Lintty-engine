@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Sinner.Domain</RootNamespace>
+  </PropertyGroup>
+
+  <!--
+    SIN: Domain pulls in a persistence package (System.Data.SqlClient).
+    Lintty LNTY-001 detects this both at the project-reference level (NuGet
+    classified as persistence in a Domain assembly) and at the symbol level
+    when Order.cs references SqlConnection.
+  -->
+  <ItemGroup>
+    <PackageReference Include="System.Data.SqlClient" Version="4.8.6" />
+  </ItemGroup>
+
+</Project>

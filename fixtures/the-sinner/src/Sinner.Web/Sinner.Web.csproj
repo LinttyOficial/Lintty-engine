@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Sinner.Web</RootNamespace>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sinner.Application\Sinner.Application.csproj" />
+    <ProjectReference Include="..\Sinner.Infrastructure\Sinner.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

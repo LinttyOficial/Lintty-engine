@@ -1,0 +1,92 @@
+# Lintty .gitignore — .NET project + Sales Cut artifacts
+
+# === .NET build artifacts ===
+[Bb]in/
+[Oo]bj/
+[Oo]ut/
+[Ll]og/
+[Ll]ogs/
+[Dd]ebug/
+[Rr]elease/
+
+# === Visual Studio / Rider / VS Code local ===
+.vs/
+*.suo
+*.user
+*.userprefs
+*.userosscache
+*.sln.docstates
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# === NuGet / dotnet ===
+*.nupkg
+*.snupkg
+.nuget/
+project.lock.json
+project.fragment.lock.json
+project.assets.json
+*.nuget.cache
+artifacts/
+
+# === Test results / coverage ===
+[Tt]est[Rr]esult*/
+*.coverage
+*.coveragexml
+coverage*.json
+coverage*.xml
+coverage*.info
+*.opencover.xml
+
+# === MSBuild intermediate ===
+*.binlog
+*.tlog
+*.cache
+
+# === Operating system noise ===
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+*.swp
+*.swo
+
+# === Secrets / private config (CRITICAL — never commit) ===
+*.pfx
+*.p12
+*.key
+*.pem
+*.crt
+.env
+.env.*
+!.env.example
+appsettings.*.local.json
+secrets.json
+
+# === GPG / signing keys (in case of accidental export) ===
+*.gpg
+*.asc
+master-backup*
+revocation*
+signing-subkey*
+
+# === Claude Code private settings (keep agents/, drop personal) ===
+.claude/settings.local.json
+.claude/.credentials/
+
+# === Local scratch / experiments ===
+/tmp/
+/scratch/
+/local/
+
+# === Ad-hoc generated PDFs (reference samples in docs/sales/samples/ stay tracked) ===
+/laudo*.pdf
+/engine/laudo*.pdf
+/engine/**/laudo*.pdf
+
+# === GitHub Actions local artifacts ===
+.github/local-*

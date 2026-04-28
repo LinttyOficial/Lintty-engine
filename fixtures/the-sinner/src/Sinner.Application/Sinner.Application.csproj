@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Sinner.Application</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Sinner.Domain\Sinner.Domain.csproj" />
+    <!--
+      SIN (LNTY-007 cycle, half 1): Application references Infrastructure.
+      Combined with Infrastructure -> Application below, this forms a cycle
+      in the project graph that Tarjan/SCC analysis flags.
+    -->
+    <ProjectReference Include="..\Sinner.Infrastructure\Sinner.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

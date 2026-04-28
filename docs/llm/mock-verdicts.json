@@ -1,0 +1,94 @@
+{
+  "_comment": "Mock verdicts para demo offline do orquestrador (Sprint 1 Phase B). MockLlmClient faz match por symbol_fqn quando candidate_id não bate exatamente. Adicione novos verdicts ao expandir a Golden Suite. Fonte: ADR 0002 §10 + fixtures/the-sinner.",
+  "_schema_version": "1.0.0",
+  "_generated_for": "fixtures/the-sinner + fixtures/the-saint + fixtures/the-ninja-01",
+
+  "by_symbol_fqn": {
+    "Sinner.Infrastructure.OrderRepository.SaveAsync": {
+      "candidate_id": "sha256:<echoed_at_runtime>",
+      "rule_id": "LNTY-004",
+      "verdict": "VIOLATION",
+      "defenses_considered": [
+        {
+          "defense_summary": "Threshold check could be argued as input validation enforcing a database constraint",
+          "assessment": "Rejected. Code mutates Order.Total via 0.90/0.95/0.98 multipliers based on business tiers; this is pricing policy, not validation.",
+          "accepted": false
+        },
+        {
+          "defense_summary": "Loyalty discount could be a denormalization step legitimate for ORM",
+          "assessment": "Rejected. Discount is computed imperatively from tiered thresholds, not projected from already-computed domain state.",
+          "accepted": false
+        },
+        {
+          "defense_summary": "CustomerName null check could be database NOT NULL pre-check",
+          "assessment": "Partially valid for that line, but does not redeem the discount logic that precedes it.",
+          "accepted": false
+        }
+      ],
+      "rejection_reasons": [
+        "Method branches on Order.Total against business thresholds (1000, 500, 100) and applies tiered discount multipliers (0.90, 0.95, 0.98) before persisting; this is pricing policy, a domain concern.",
+        "Mutation of Order.Total prior to _store assignment couples the persistence boundary to business rules that belong in the Order aggregate or a PricingService."
+      ],
+      "evidence_quote": "Method 'SaveAsync' applies threshold-based loyalty discount logic (10% above 1000, 5% above 500, 2% above 100) prior to persistence, coupling the repository to domain pricing rules.",
+      "severity_proposed": "high",
+      "confidence": "high"
+    },
+
+    "Sinner.Infrastructure.MegaRepository.DoEverything": {
+      "_note": "Este candidato NÃO deveria chegar ao LLM em produção — LNTY-009 aborta antes (slice excede 8K tokens). Mock retorna NO_VIOLATION caso o orquestrador receba indevidamente, garantindo que o motor nunca dependa de o LLM 'cobrir' a falha de gating.",
+      "candidate_id": "sha256:<echoed_at_runtime>",
+      "rule_id": "LNTY-004",
+      "verdict": "NO_VIOLATION",
+      "defenses_considered": [
+        {
+          "defense_summary": "Method exceeds analyzability budget; should have been caught by LNTY-009 before reaching LLM",
+          "assessment": "Sustained. Per Lintty pipeline (04-llm-ops.md §9), oversized slices abort with LNTY-009 and are never sent to LLM. If this candidate arrived here, it is a pipeline bug, not a LNTY-004 violation.",
+          "accepted": true
+        }
+      ],
+      "rejection_reasons": [],
+      "evidence_quote": "Method exceeds Lintty's semantic analyzability budget; verdict deferred to LNTY-009. No LNTY-004 evaluation performed.",
+      "severity_proposed": "high",
+      "confidence": "low"
+    },
+
+    "Saint.Infrastructure.OrderRepository.SaveAsync": {
+      "_note": "Saint não dispara pré-filtro Roslyn LNTY-004 (cyclomatic <= 3, no branching). Este verdict só serve se um futuro fixture Saint adicionar candidato calibrado.",
+      "candidate_id": "sha256:<echoed_at_runtime>",
+      "rule_id": "LNTY-004",
+      "verdict": "NO_VIOLATION",
+      "defenses_considered": [
+        {
+          "defense_summary": "Method is pure persistence: Add + SaveChangesAsync, no branching, no comparisons",
+          "assessment": "Sustained. Method delegates entirely to EF Core primitives; no domain logic present.",
+          "accepted": true
+        }
+      ],
+      "rejection_reasons": [],
+      "evidence_quote": "Method 'SaveAsync' delegates to DbSet.Add and DbContext.SaveChangesAsync without business branching or computation. Pure persistence.",
+      "severity_proposed": "high",
+      "confidence": "high"
+    }
+  },
+
+  "by_candidate_id": {
+    "_comment": "Quando o backend-dev-dotnet em Phase B fixar os candidate_ids estáveis (sha256 sobre rule_id|file|symbol_fqn|canon_version|code_slice_normalized), copiar aqui o ID e o verdict correspondente para garantir match determinístico. Por enquanto, by_symbol_fqn é o caminho default."
+  },
+
+  "default_when_no_match": {
+    "candidate_id": "sha256:<echoed_at_runtime>",
+    "rule_id": "LNTY-004",
+    "verdict": "NO_VIOLATION",
+    "defenses_considered": [
+      {
+        "defense_summary": "Mock client has no canned verdict for this candidate; default to NO_VIOLATION to avoid false positives in demo",
+        "assessment": "Sustained as conservative default. Demo path expects only known candidates from fixtures Saint/Sinner/Ninja-01.",
+        "accepted": true
+      }
+    ],
+    "rejection_reasons": [],
+    "evidence_quote": "No mock verdict registered for this candidate; conservative NO_VIOLATION applied. Production AnthropicLlmClient would emit a real verdict.",
+    "severity_proposed": "high",
+    "confidence": "low"
+  }
+}

@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <RootNamespace>Lintty.Engine.Reporter</RootNamespace>
+    <AssemblyName>Lintty.Engine.Reporter</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="QuestPDF" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lintty.Engine.Core\Lintty.Engine.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Resources\Inter-Regular.ttf" />
+    <EmbeddedResource Include="Resources\Inter-SemiBold.ttf" />
+    <EmbeddedResource Include="Resources\Inter-Bold.ttf" />
+    <EmbeddedResource Include="Resources\JetBrainsMono-Regular.ttf" />
+    <EmbeddedResource Include="Resources\JetBrainsMono-Bold.ttf" />
+    <EmbeddedResource Include="..\Lintty.Docs.Pdf\Resources\lintty-logo.png"
+                      Link="Resources\lintty-logo.png"
+                      LogicalName="Lintty.Engine.Reporter.Resources.lintty-logo.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Lintty.Engine.Reporter.Tests" />
+  </ItemGroup>
+
+</Project>

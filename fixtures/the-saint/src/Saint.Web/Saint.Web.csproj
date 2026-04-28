@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>Saint.Web</RootNamespace>
+    <OutputType>Library</OutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Saint.Application\Saint.Application.csproj" />
+    <ProjectReference Include="..\Saint.Infrastructure\Saint.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
