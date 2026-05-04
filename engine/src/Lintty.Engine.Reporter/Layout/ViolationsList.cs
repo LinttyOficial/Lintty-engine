@@ -91,12 +91,42 @@ internal static class ViolationsList
                 });
             }
 
-            // Additional context (e.g., constant_value, detection_pass)
+            // Per-rule explanation blocks (display-only copy from RuleCatalog).
+            // Two registers: stakeholder ("Por que importa") and architect
+            // ("Análise arquitetural"). Graceful fallback: if the rule isn't
+            // catalogued (shouldn't happen for the 7 V0 rules), skip both.
+            var ruleCopy = RuleCatalog.TryGet(v.RuleId);
+            if (ruleCopy is not null)
+            {
+                block.Item().PaddingTop(6).Text(text =>
+                {
+                    text.Span("Por que importa — ")
+                        .FontFamily(EmbeddedFonts.Sans).FontSize(9).SemiBold()
+                        .FontColor(LinttyColors.TextSecondary);
+                    text.Span(ruleCopy.WhyItMatters)
+                        .FontFamily(EmbeddedFonts.Sans).FontSize(9)
+                        .FontColor(LinttyColors.TextPrimary).LineHeight(1.35f);
+                });
+
+                block.Item().PaddingTop(3).Text(text =>
+                {
+                    text.Span("Análise arquitetural — ")
+                        .FontFamily(EmbeddedFonts.Sans).FontSize(9).SemiBold()
+                        .FontColor(LinttyColors.TextSecondary);
+                    text.Span(ruleCopy.ArchitecturalReasoning)
+                        .FontFamily(EmbeddedFonts.Sans).FontSize(9)
+                        .FontColor(LinttyColors.TextPrimary).LineHeight(1.35f);
+                });
+            }
+
+            // Additional evidence (key=value pairs from the analyzer, e.g.,
+            // constant_value, detection_pass). Renamed from "Justificativa
+            // técnica" — this block is evidence, not justification.
             if (v.Evidence.AdditionalContext.Count > 0)
             {
                 block.Item().PaddingTop(4).Text(text =>
                 {
-                    text.Span("Justificativa técnica: ")
+                    text.Span("Evidência adicional: ")
                         .FontFamily(EmbeddedFonts.Sans).FontSize(9).SemiBold()
                         .FontColor(LinttyColors.TextSecondary);
 

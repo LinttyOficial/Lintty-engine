@@ -125,9 +125,9 @@ Tudo abaixo é **parte do Blueprint v1.0 mas não é necessário para vender a i
 
 | Item | Tratamento |
 |------|-----------|
-| **LNTY-004 (advogado de defesa LLM)** | **V1+.** Spec preservada em `docs/04-llm-ops.md` e `docs/adr/0002-llm-sprint-1.md`. Vira slide de roadmap. |
+| **LNTY-004 (advogado de defesa LLM)** | **V1+.** Spec preservada em `docs/futuro/llm-ops.md` e `docs/futuro/adr-0002-llm-sprint-1.md`. Vira slide de roadmap. |
 | **LNTY-005 (Anemic Domain LLM)** | V1+. Mesma razão. |
-| **Anthropic Enterprise + ZDR** | **V1+.** `docs/compliance/zdr-anthropic-plan.md` preservado como playbook. Sem LLM no Sales Cut, ZDR não é pré-requisito. |
+| **Anthropic Enterprise + ZDR** | **V1+.** `docs/futuro/compliance-zdr-anthropic-plan.md` preservado como playbook. Sem LLM no Sales Cut, ZDR não é pré-requisito. |
 | **Orquestrador Python** | V1+. Diretório `orchestrator/` mantido como stub. |
 
 ### 4.2. Infraestrutura

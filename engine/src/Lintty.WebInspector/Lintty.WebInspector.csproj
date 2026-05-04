@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <RootNamespace>Lintty.WebInspector</RootNamespace>
+    <AssemblyName>lintty-web-inspector</AssemblyName>
+    <UserSecretsId>lintty-web-inspector-v0</UserSecretsId>
+    <!--
+      InvariantGlobalization is mandatory: the worker spawns the engine CLI as a
+      subprocess and the engine itself runs under invariant culture. Any locale
+      drift here would propagate via env vars and break the cross-determinism
+      gate in 13-web-inspector.md §10.
+    -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!--
+      Emit XML doc comments so Swashbuckle can surface <summary> / <remarks>
+      on schemas and operations in the OpenAPI document. CS1591 ("Missing XML
+      comment for publicly visible type or member") would otherwise turn every
+      public type without a doc comment into a build error under
+      TreatWarningsAsErrors=true. We silence CS1591 *only here* — analyzer code
+      and engine code stay loud.
+    -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <PackageReference Include="Swashbuckle.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Reference Lintty.Engine.Core for the TargetResolver (ADR 0006). The worker
+      runs the resolver in-process to classify what's in the clone, then passes
+      the resolved target to the engine CLI subprocess via the target flag.
+      The subprocess invocation remains the only path that produces JSON/PDF
+      artifacts (the cross-determinism gate in 13-web-inspector.md §10).
+    -->
+    <ProjectReference Include="..\Lintty.Engine.Core\Lintty.Engine.Core.csproj" />
+  </ItemGroup>
+
+</Project>

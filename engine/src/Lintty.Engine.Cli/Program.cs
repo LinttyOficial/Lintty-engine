@@ -4,6 +4,7 @@ using System.IO;
 using System.Threading.Tasks;
 using Lintty.Engine.Core;
 using Lintty.Engine.Core.Output;
+using Lintty.Engine.Core.Workspace;
 using Lintty.Engine.Reporter;
 
 namespace Lintty.Engine.Cli;
@@ -12,12 +13,17 @@ namespace Lintty.Engine.Cli;
 /// Lintty engine CLI entrypoint. Exit codes (per ADR 0001 §2):
 ///   0 = analysis ran, grade better than --fail-on-grade
 ///   1 = analysis ran, grade equal-or-worse than --fail-on-grade
-///   2 = execution error (solution missing, IO failure, PDF render failure, etc.)
+///   2 = execution error (target missing, IO failure, PDF render failure, etc.)
 ///   3 = usage error (invalid arguments)
 ///
-/// New in Sprint 1 (ADR 0003): --pdf &lt;path&gt; generates the audit PDF
-/// alongside the JSON output. Backward compatible — absent flag preserves
-/// the Sprint 0 behaviour (JSON only).
+/// Sprint 1 (ADR 0003): --pdf &lt;path&gt; generates the audit PDF alongside the
+/// JSON output. Backward compatible — absent flag preserves the Sprint 0
+/// behaviour (JSON only).
+///
+/// ADR 0006: --target replaces --solution. The latter is kept as a deprecated
+/// alias for one version (removed in v0.3.0). --target accepts a .sln, a
+/// .csproj, a directory, or a lintty.yml path; resolution rules are in
+/// <see cref="TargetResolver"/>.
 /// </summary>
 public static class Program
 {
@@ -25,10 +31,13 @@ public static class Program
     {
         var exitCode = 0;
 
-        var solutionOption = new Option<FileInfo>(
+        var targetOption = new Option<FileSystemInfo?>(
+            name: "--target",
+            description: "Path to a .sln, a .csproj, or a directory/lintty.yml declaring the analysis scope (ADR 0006).");
+
+        var solutionOption = new Option<FileSystemInfo?>(
             name: "--solution",
-            description: "Path to a .sln file to analyze.")
-        { IsRequired = true };
+            description: "Deprecated alias for --target. Will be removed in v0.3.0.");
 
         var canonOption = new Option<string?>(
             name: "--canon-version",
@@ -52,8 +61,9 @@ public static class Program
             name: "--pdf",
             description: "Also generate a PDF audit report at this path (Sprint 1, ADR 0003).");
 
-        var analyze = new Command("analyze", "Run the engine over a solution.")
+        var analyze = new Command("analyze", "Run the engine over a target.")
         {
+            targetOption,
             solutionOption,
             canonOption,
             outputOption,
@@ -64,7 +74,8 @@ public static class Program
 
         analyze.SetHandler(async (System.CommandLine.Invocation.InvocationContext ctx) =>
         {
-            var solution = ctx.ParseResult.GetValueForOption(solutionOption)!;
+            var target = ctx.ParseResult.GetValueForOption(targetOption);
+            var solution = ctx.ParseResult.GetValueForOption(solutionOption);
             var canon = ctx.ParseResult.GetValueForOption(canonOption);
             var output = ctx.ParseResult.GetValueForOption(outputOption) ?? "json";
             var outputFile = ctx.ParseResult.GetValueForOption(outputFileOption);
@@ -73,10 +84,28 @@ public static class Program
 
             try
             {
-                if (!solution.Exists)
+                // ADR 0006 §3.2: --target and --solution are mutually exclusive.
+                if (target is not null && solution is not null)
                 {
-                    Console.Error.WriteLine($"Solution not found: {solution.FullName}");
-                    exitCode = 2;
+                    Console.Error.WriteLine("usage: use only one of --target or --solution.");
+                    exitCode = 3;
+                    return;
+                }
+
+                string? targetArg;
+                if (target is not null)
+                {
+                    targetArg = target.FullName;
+                }
+                else if (solution is not null)
+                {
+                    Console.Error.WriteLine("warning: --solution is deprecated; use --target. Will be removed in v0.3.0.");
+                    targetArg = solution.FullName;
+                }
+                else
+                {
+                    Console.Error.WriteLine("usage: --target is required.");
+                    exitCode = 3;
                     return;
                 }
 
@@ -96,8 +125,23 @@ public static class Program
                     return;
                 }
 
+                ResolvedTarget resolved;
+                try
+                {
+                    resolved = TargetResolver.Resolve(
+                        targetArg: targetArg,
+                        cwd: Directory.GetCurrentDirectory(),
+                        mode: TargetResolverMode.Cli);
+                }
+                catch (TargetResolutionException ex)
+                {
+                    Console.Error.WriteLine($"{ex.ErrorCode}: {ex.Message}");
+                    exitCode = 2;
+                    return;
+                }
+
                 var engine = new LinttyEngine();
-                var report = await engine.AnalyzeAsync(solution.FullName, canon).ConfigureAwait(false);
+                var report = await engine.AnalyzeAsync(resolved, canon).ConfigureAwait(false);
                 var json = JsonReport.Serialize(report, indented: output == "pretty");
 
                 if (outputFile is not null)

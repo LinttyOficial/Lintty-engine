@@ -228,6 +228,12 @@ lintty:
   canon_version: "1.0.0"           # Imutável após criação do projeto
   project_id: "proj_abc123"
 
+  projects:                        # Opcional. Lista explícita de .csproj quando o repo não tem .sln. Ver ADR 0006.
+    - src/MyCompany.Domain/MyCompany.Domain.csproj
+    - src/MyCompany.Application/MyCompany.Application.csproj
+    - src/MyCompany.Infrastructure/MyCompany.Infrastructure.csproj
+    - src/MyCompany.Api/MyCompany.Api.csproj
+
   layer_tagging:
     mode: "convention"             # convention | explicit | both
     convention_map:
@@ -254,6 +260,8 @@ lintty:
     LNTY-008: { enabled: true }
     LNTY-009: { enabled: true }
 ```
+
+Campo `projects:` (opcional, especificado em [ADR 0006](adr/0006-target-resolution.md)): lista explícita de `.csproj` quando o repositório não tem `.sln`. Paths são relativos ao `lintty.yml`, sem glob, sem absoluto, sem `..` que escape o diretório. Ordem de declaração = ordem de carregamento. Quando o campo é omitido, o motor usa o `.sln` da raiz (comportamento histórico).
 
 ---
 

@@ -9,7 +9,7 @@
 
 ## Revisão de design (estrutura canônica)
 
-1. **Cabe no canon arquitetural?** Sim. O motor é o componente determinístico de `docs/03-motor-roslyn.md` §3, executando offline no Sprint 0 (sem rede, sem LLM, sem Cloud Run).
+1. **Cabe no canon arquitetural?** Sim. O motor é o componente determinístico de `docs/03-motor-cli.md` §5 (pipeline), executando offline (sem rede, sem LLM, sem Cloud Run).
 2. **Princípios afetados:** #2 (Layered design — o próprio motor é em camadas), #3 (determinismo factual), #6 (hard locks sagrados), #7 (single source of truth = canon pinado).
 3. **Fronteira:** binário standalone CLI → stdout JSON. Sem chamadas de rede, sem LLM, sem persistência. Consumidor downstream (Control Plane / reporter) recebe o JSON via stdin/file.
 4. **`inference_signature` / audit chain:** placeholder no Sprint 0 (campo presente, valor `null`). Sprint 1 preenche com `model+snapshot+prompt_hash+fewshot_hash`. Sprint 2 entra no audit chain.
@@ -70,7 +70,7 @@ lintty/
 
 ### Target framework e configurações globais
 
-- **Target:** `net8.0` (LTS até nov/2026; `docs/03-motor-roslyn.md` §1 lista até .NET 9, escolhemos 8 por estabilidade no piloto).
+- **Target:** `net8.0` (LTS até nov/2026; `docs/03-motor-cli.md` §2 lista .NET 6–9 como targets analisáveis, mas o motor em si compila em .NET 8 por estabilidade no piloto).
 - `LangVersion=12`, `Nullable=enable`, `TreatWarningsAsErrors=true`, `Deterministic=true`, `ContinuousIntegrationBuild=true` (no CI).
 - `<InvariantGlobalization>true</InvariantGlobalization>` no CLI (evita diff de cultura na serialização).
 
@@ -129,7 +129,7 @@ Subcomandos futuros (não no Sprint 0, listados para reservar a forma):
 
 ## 3. Contrato de saída JSON
 
-Schema baseado em `docs/03-motor-roslyn.md` §7, expandido com os campos exigidos pelo prompt (`grade`, `seal_eligible`, `hard_locks_hit`, `layer_summary`, `exceptions`, `workspace_diagnostics`, `inference_signature`). **Os campos do canon (`scan_id`, `metrics`, `ai_candidates`, `suppressions_parsed`, `sandbox_integrity`) são preservados** — o motor não pode emitir um superset divergente do contrato canônico.
+Schema baseado em `docs/futuro/motor-roslyn-blueprint.md` §7 (versão original, preservada como referência), expandido com os campos exigidos pelo prompt (`grade`, `seal_eligible`, `hard_locks_hit`, `layer_summary`, `exceptions`, `workspace_diagnostics`, `inference_signature`). **Os campos do canon (`scan_id`, `metrics`, `ai_candidates`, `suppressions_parsed`, `sandbox_integrity`) são preservados** — o motor não pode emitir um superset divergente do contrato canônico, mesmo com placeholders `null` no V0.
 
 ### Top-level (anotado)
 
@@ -139,7 +139,7 @@ Schema baseado em `docs/03-motor-roslyn.md` §7, expandido com os campos exigido
   "run_id": "01HXYZ...",                      // ULID (sem timestamp humano embutido — só random; ver §5)
   "canon_version": "1.0.0",
   "rule_set_version": "1.0.0",                // == canon_version no MVP; campo separado para evoluir patches sem bumpar canon
-  "solution_path": "MyCompany.sln",           // SEMPRE relativo à pasta passada em --solution; nunca absoluto
+  "solution_path": "MyCompany.sln",           // SEMPRE relativo à pasta passada em --solution; nunca absoluto. Após ADR 0006, conteúdo é polimórfico — ver nota abaixo.
 
   "score": 0,                                 // 0-100, arredondado a passos de 5 (canon §Cálculo)
   "grade": "F",                               // A | B | C | D | F
@@ -167,6 +167,8 @@ Schema baseado em `docs/03-motor-roslyn.md` §7, expandido com os campos exigido
                                               // Sprint 0: motor roda local, campos null/[]
 }
 ```
+
+> **Nota (após ADR 0006):** o conteúdo de `solution_path` é polimórfico — pode terminar em `.sln`, `.csproj`, ou `lintty.yml`, dependendo de como o usuário declarou o alvo da análise. O campo continua sendo string-livre dentro do schema JSON `1.0`, que permanece LOCKED. O Reporter deriva o modo (sln-driven vs csproj-driven vs yaml-driven) a partir do sufixo deste campo para renderizar o bloco "Escopo da análise" do PDF.
 
 ### 3.1 `violation` (objeto)
 
@@ -210,7 +212,7 @@ Schema baseado em `docs/03-motor-roslyn.md` §7, expandido com os campos exigido
 
 ### 3.3 `workspace_diagnostic`
 
-Falhas não-fatais do `MSBuildWorkspace` (`docs/03-motor-roslyn.md` §2: falhas fatais já abortam com exit 2; aqui ficam `Warning`):
+Falhas não-fatais do `MSBuildWorkspace` (`docs/03-motor-cli.md` §4: falhas fatais já abortam com exit 2; aqui ficam `Warning`):
 
 ```jsonc
 { "kind": "warning", "message": "Project X targets net48; analyzed in compatibility mode.", "project": "X.csproj" }
@@ -419,7 +421,7 @@ Listadas, **não decididas neste ADR**. Cada uma vira ADR próprio quando o spri
 | # | Decisão | Quando endereçar | Por que adiar |
 |---|---|---|---|
 | 1 | **Orquestrador backend (Python vs Go)** | Sprint 2 (infra) | Sales Cut roda CLI no laptop; orquestrador não bloqueia demo. `docs/12-sales-cut.md` §4.1. |
-| 2 | **Invocação em Cloud Run (Job vs Service, scaling, 2nd-gen vs 1st-gen)** | Sprint 2 | Idem #1. `docs/03-motor-roslyn.md` §1 lista recursos por tier mas não fixa job vs service. |
+| 2 | **Invocação em Cloud Run (Job vs Service, scaling, 2nd-gen vs 1st-gen)** | V1+ (após sinal comercial) | Idem #1. `docs/futuro/motor-roslyn-blueprint.md` §1 lista recursos por tier mas não fixa job vs service. No V0, o Web Inspector roda numa única VM/serviço e isso é suficiente. |
 | 3 | **Provedor de TSA (DigiCert / FreeTSA / outro RFC 3161)** | Sprint 3 (reporter assinado) | PDF mock no Sales Cut (§4.3 do sales cut). Decisão envolve due-diligence comercial. |
 | 4 | **Formato exato do `inference_signature`** | Sprint 1 (LLM) | No Sprint 0 é placeholder `null`. Forma proposta no canon: `{model, snapshot_id, prompt_hash, fewshot_hash}` mas o hash exato (sha256? blake3?) e a ordem dos campos hashed precisam ser fixados quando integrarmos Anthropic. |
 | 5 | **Tokenizer real para LNTY-009** | Sprint 1 | Sprint 0 usa estimativa por LoC × fator (placeholder). Tokenizer Anthropic chega com a integração da SDK. |
@@ -429,4 +431,4 @@ Listadas, **não decididas neste ADR**. Cada uma vira ADR próprio quando o spri
 ---
 
 **Próxima decisão a tomar (após este ADR aceito):**
-qa-engineer entrega `tests/Lintty.Engine.Golden/fixtures/saint-csharp/` com `Saint.sln` mínimo (4 projetos, 0 violações esperadas) + `expected.json` baseado no exemplo de §3.4. Em paralelo, backend-dev-dotnet faz scaffolding da árvore §1 e implementa `SolutionLoader` + `LayerTagger` + LNTY-001. Sem fixture, não tem regra (`docs/03-motor-roslyn.md` §11; agent definition do backend-dev-dotnet).
+qa-engineer entrega `tests/Lintty.Engine.Golden/fixtures/saint-csharp/` com `Saint.sln` mínimo (4 projetos, 0 violações esperadas) + `expected.json` baseado no exemplo de §3.4. Em paralelo, backend-dev-dotnet faz scaffolding da árvore §1 e implementa `SolutionLoader` + `LayerTagger` + LNTY-001. Sem fixture, não tem regra (`docs/09-golden-tests.md` e agent definition do backend-dev-dotnet).

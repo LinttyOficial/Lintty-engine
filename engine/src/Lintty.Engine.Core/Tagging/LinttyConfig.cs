@@ -19,6 +19,16 @@ public sealed class LinttyConfig
     public IReadOnlyDictionary<string, string> ExplicitMap { get; init; }
         = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Optional list of <c>.csproj</c> paths declaring the analysis scope when
+    /// no <c>.sln</c> exists (ADR 0006 §4). Paths are relative to the
+    /// <c>lintty.yml</c> directory; absolute paths, globs, and <c>..</c>
+    /// escapes are rejected by <see cref="Workspace.TargetResolver"/>, NOT here
+    /// — the parser reads the YAML literally so validation can stay close to
+    /// the filesystem (§4.6).
+    /// </summary>
+    public IReadOnlyList<string> Projects { get; init; } = System.Array.Empty<string>();
+
     public static IReadOnlyDictionary<string, IReadOnlyList<string>> DefaultConventionMap { get; }
         = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase)
         {
@@ -51,6 +61,7 @@ public sealed class LinttyConfig
         var mode = "convention";
         var convention = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
         var explicitMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var projects = new List<string>();
 
         // Support both flat (canon_version: ...) and nested (lintty: { canon_version: ... }).
         var scope = root;
@@ -60,6 +71,13 @@ public sealed class LinttyConfig
             scope = nested;
             canonVersion = TryGetScalar(nested, "canon_version") ?? canonVersion;
         }
+
+        // ADR 0006 §4.6: read `projects:` from the root scope (and the nested
+        // lintty scope if used). Validation against filesystem happens later in
+        // TargetResolver — the parser only reads the YAML literally.
+        ReadProjects(root, projects);
+        if (!ReferenceEquals(scope, root))
+            ReadProjects(scope, projects);
 
         if (scope.Children.TryGetValue(new YamlScalarNode("layer_tagging"), out var ltRaw)
             && ltRaw is YamlMappingNode lt)
@@ -104,7 +122,21 @@ public sealed class LinttyConfig
             Mode = mode,
             ConventionMap = convention.Count > 0 ? convention : DefaultConventionMap,
             ExplicitMap = explicitMap,
+            Projects = projects,
         };
+    }
+
+    private static void ReadProjects(YamlMappingNode node, List<string> sink)
+    {
+        if (node.Children.TryGetValue(new YamlScalarNode("projects"), out var raw)
+            && raw is YamlSequenceNode seq)
+        {
+            foreach (var item in seq.Children)
+            {
+                if (item is YamlScalarNode s && s.Value is not null)
+                    sink.Add(s.Value);
+            }
+        }
     }
 
     private static string? TryGetScalar(YamlMappingNode node, string key)

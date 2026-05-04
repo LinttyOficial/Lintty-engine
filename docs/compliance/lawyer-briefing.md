@@ -261,9 +261,10 @@ Sugiro pautar a reunião inicial com o(a) advogado(a) por estas perguntas:
 - **Email:** `[INSERIR EMAIL DO OPERADOR]`
 - **Forma preferida de comunicação:** email para registro escrito; chamadas pontuais para validação.
 - **Material de referência adicional disponível mediante pedido:**
-  - Blueprint completo do produto (`docs/01-product-vision.md` até `docs/11-glossary.md`).
-  - Plano de ZDR Anthropic preservado para V1+ (`docs/compliance/zdr-anthropic-plan.md`).
-  - Spec do produto Sales Cut (`docs/12-sales-cut.md`).
+  - Visão de produto V0 (`docs/01-product-vision.md`).
+  - Blueprint completo aspiracional V1+ (`docs/futuro/product-vision-blueprint.md` e demais docs em `docs/futuro/`).
+  - Plano de ZDR Anthropic preservado para V1+ (`docs/futuro/compliance-zdr-anthropic-plan.md`).
+  - Spec do Sales Cut e dos dois caminhos de uso (`docs/12-sales-cut.md`, `docs/13-web-inspector.md`, `docs/14-cli-distribution.md`).
 
 ---
 

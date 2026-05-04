@@ -13,6 +13,18 @@ namespace Lintty.Engine.Core.Workspace;
 /// <summary>
 /// Loads a Solution + Compilations via MSBuildWorkspace. Tracks WorkspaceFailed
 /// diagnostics (warnings exposed in the report; failures bubble up as throws).
+///
+/// Two entry points (ADR 0006 §6.1):
+///   * <see cref="LoadFromSolutionAsync"/> — given a <c>.sln</c>, mirrors the
+///     pre-ADR-0006 behaviour.
+///   * <see cref="LoadFromProjectListAsync"/> — given an explicit list of
+///     <c>.csproj</c> paths (declared in <c>lintty.yml</c> or a single
+///     <c>--target Foo.csproj</c>), builds the same <see cref="LoadResult"/>
+///     shape via <see cref="AdhocWorkspace"/>.
+///
+/// <see cref="LoadAsync"/> remains as a thin alias of
+/// <see cref="LoadFromSolutionAsync"/> for backward compatibility with callers
+/// that have a <c>.sln</c> in hand.
 /// </summary>
 public sealed class SolutionLoader
 {
@@ -27,7 +39,15 @@ public sealed class SolutionLoader
         IReadOnlyList<WorkspaceWarning> Warnings,
         IReadOnlyDictionary<string, IReadOnlyList<string>> ProjectReferences);
 
-    public async Task<LoadResult> LoadAsync(string solutionPath)
+    public Task<LoadResult> LoadAsync(string solutionPath)
+        => LoadFromSolutionAsync(solutionPath);
+
+    /// <summary>
+    /// Loads a workspace from a <c>.sln</c> file. Tries MSBuildWorkspace first;
+    /// falls back to a manual <see cref="AdhocWorkspace"/> built from the
+    /// <c>.sln</c> project list when MSBuild is unusable on the host.
+    /// </summary>
+    public async Task<LoadResult> LoadFromSolutionAsync(string solutionPath)
     {
         if (!File.Exists(solutionPath))
             throw new FileNotFoundException($"Solution not found: {solutionPath}", solutionPath);
@@ -37,7 +57,7 @@ public sealed class SolutionLoader
             // No MSBuild on the host (common when only a newer SDK is installed).
             // Fall through to the manual loader — it parses the .sln/.csproj
             // directly and builds a self-contained Compilation.
-            return await ManualLoadAsync(solutionPath).ConfigureAwait(false);
+            return await ManualLoadFromSolutionAsync(solutionPath).ConfigureAwait(false);
         }
 
         var properties = new Dictionary<string, string>
@@ -70,7 +90,7 @@ public sealed class SolutionLoader
             // that parses the .sln + .csproj files directly. This keeps the engine
             // usable even when the host SDK lacks a matching .NET 8 targeting pack.
             workspace.Dispose();
-            return await ManualLoadAsync(solutionPath).ConfigureAwait(false);
+            return await ManualLoadFromSolutionAsync(solutionPath).ConfigureAwait(false);
         }
 
         var projects = new List<(Project, Compilation)>();
@@ -104,10 +124,39 @@ public sealed class SolutionLoader
         if (projects.Count == 0)
         {
             workspace.Dispose();
-            return await ManualLoadAsync(solutionPath).ConfigureAwait(false);
+            return await ManualLoadFromSolutionAsync(solutionPath).ConfigureAwait(false);
         }
 
         return new LoadResult(solution, projects, warnings, projectRefs);
+    }
+
+    /// <summary>
+    /// Loads a workspace from a declared list of <c>.csproj</c> absolute paths,
+    /// in the given order (ADR 0006 §4.3, §6.1). The reporting path is what
+    /// the engine will render into <c>report.solution_path</c>.
+    /// </summary>
+    public Task<LoadResult> LoadFromProjectListAsync(
+        IReadOnlyList<string> csprojAbsList,
+        string solutionPathForReporting)
+    {
+        if (csprojAbsList is null) throw new ArgumentNullException(nameof(csprojAbsList));
+        if (csprojAbsList.Count == 0)
+            throw new ArgumentException("Project list cannot be empty.", nameof(csprojAbsList));
+
+        var raw = new List<(string Name, string CsprojAbs)>(csprojAbsList.Count);
+        foreach (var csprojAbs in csprojAbsList)
+        {
+            if (!File.Exists(csprojAbs))
+                throw new FileNotFoundException($"Project not found: {csprojAbs}", csprojAbs);
+            // Use the assembly-name fallback: file name without extension. The
+            // BuildSolutionFromProjects pass overrides this with <RootNamespace>
+            // when the csproj declares one. Same convention SolutionLoader has
+            // used for years for fixtures with no AssemblyName override.
+            var name = Path.GetFileNameWithoutExtension(csprojAbs);
+            raw.Add((name, csprojAbs));
+        }
+
+        return BuildSolutionFromProjectsAsync(raw, solutionPathForReporting);
     }
 
     private static bool TryEnsureLocator()
@@ -131,13 +180,11 @@ public sealed class SolutionLoader
     }
 
     /// <summary>
-    /// Fallback loader: parses the .sln for project paths, then builds a
-    /// <see cref="Solution"/> using <see cref="AdhocWorkspace"/>. We add the
-    /// .cs source files of each project as documents and resolve project
-    /// references by csproj path. Sufficient for type-aware analysis on the
-    /// fixtures since they reference only BCL types.
+    /// Fallback loader: parses the .sln for project paths, then delegates to
+    /// <see cref="BuildSolutionFromProjectsAsync"/>. Sufficient for type-aware
+    /// analysis on the fixtures since they reference only BCL types.
     /// </summary>
-    private static async Task<LoadResult> ManualLoadAsync(string solutionPath)
+    private static async Task<LoadResult> ManualLoadFromSolutionAsync(string solutionPath)
     {
         var solutionDir = Path.GetDirectoryName(Path.GetFullPath(solutionPath))!;
         var solutionText = await File.ReadAllTextAsync(solutionPath).ConfigureAwait(false);
@@ -147,11 +194,6 @@ public sealed class SolutionLoader
             "Project\\(\"\\{[^}]+\\}\"\\)\\s*=\\s*\"([^\"]+)\"\\s*,\\s*\"([^\"]+)\"\\s*,\\s*\"\\{([^}]+)\\}\"",
             System.Text.RegularExpressions.RegexOptions.Compiled);
 
-        var workspace = new AdhocWorkspace();
-        var solutionId = SolutionId.CreateNewId();
-        workspace.AddSolution(SolutionInfo.Create(solutionId, VersionStamp.Default));
-
-        // Pass 1: collect (name, relPath, csprojAbs).
         var raw = new List<(string Name, string CsprojAbs)>();
         foreach (System.Text.RegularExpressions.Match m in projectRegex.Matches(solutionText))
         {
@@ -162,22 +204,42 @@ public sealed class SolutionLoader
             raw.Add((name, abs));
         }
 
-        // Pass 2: create ProjectInfo objects + record id.
+        return await BuildSolutionFromProjectsAsync(raw, solutionPath).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Builds an <see cref="AdhocWorkspace"/>-backed Solution from the given
+    /// <c>(Name, CsprojAbs)</c> pairs in the supplied order. This is the
+    /// shared core used by both the .sln fallback path and the
+    /// <see cref="LoadFromProjectListAsync"/> path. Iteration order is
+    /// preserved as-given (ADR 0006 §4.3, §6.3).
+    /// </summary>
+    private static async Task<LoadResult> BuildSolutionFromProjectsAsync(
+        IReadOnlyList<(string Name, string CsprojAbs)> raw,
+        string solutionPathForReporting)
+    {
+        var workspace = new AdhocWorkspace();
+        var solutionId = SolutionId.CreateNewId();
+        workspace.AddSolution(SolutionInfo.Create(solutionId, VersionStamp.Default));
+
+        // Pass 1: create ProjectId per entry and build a name lookup.
         var idByName = new Dictionary<string, ProjectId>(StringComparer.OrdinalIgnoreCase);
         var pathByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, abs) in raw)
         {
+            if (idByName.ContainsKey(name)) continue;
             var pid = ProjectId.CreateNewId(debugName: name);
             idByName[name] = pid;
             pathByName[name] = abs;
         }
 
-        // Pass 3: parse csproj for ProjectReference + RootNamespace.
-        var nameByCsprojPath = raw.ToDictionary(
-            r => r.CsprojAbs, r => r.Name, StringComparer.OrdinalIgnoreCase);
+        var nameByCsprojPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, abs) in raw)
+        {
+            nameByCsprojPath[abs] = name;
+        }
 
         var infos = new List<ProjectInfo>();
-        var docInfosByProject = new Dictionary<ProjectId, List<DocumentInfo>>();
         var projectRefs = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
 
         // Standard references: System runtime + collections + linq + threading.
@@ -193,7 +255,7 @@ public sealed class SolutionLoader
 
         foreach (var (name, csprojAbs) in raw)
         {
-            var pid = idByName[name];
+            if (!idByName.TryGetValue(name, out var pid)) continue;
             var projDir = Path.GetDirectoryName(csprojAbs)!;
             var rootNs = name; // fallback
             var refNames = new List<string>();
@@ -212,6 +274,9 @@ public sealed class SolutionLoader
                         include.Replace('\\', Path.DirectorySeparatorChar)));
                     if (nameByCsprojPath.TryGetValue(refAbs, out var refName))
                         refNames.Add(refName);
+                    // ADR 0006 §6.4: ProjectReference outside the declared scope
+                    // is silently ignored. The user defined the scope; we don't
+                    // expand it.
                 }
             }
             catch { /* swallow csproj parse errors; treat as no-ref */ }
@@ -239,7 +304,6 @@ public sealed class SolutionLoader
                     loader: loader,
                     filePath: csFile));
             }
-            docInfosByProject[pid] = docInfos;
 
             var info = ProjectInfo.Create(
                 id: pid,
@@ -277,13 +341,20 @@ public sealed class SolutionLoader
             SolutionInfo.Create(
                 solutionId,
                 VersionStamp.Default,
-                filePath: solutionPath,
+                filePath: solutionPathForReporting,
                 projects: resolvedInfos));
 
+        // Iterate compilations in the original declaration order, matching the
+        // raw list. This is critical for ADR 0006 §4.3 / §6.3 — the engine
+        // (and downstream metrics aggregation) must see projects in the order
+        // declared in lintty.yml, not the alphabetical order of project.Name.
         var compilations = new List<(Project, Compilation)>();
         var warnings = new List<WorkspaceWarning>();
-        foreach (var project in solution.Projects.OrderBy(p => p.Name, StringComparer.Ordinal))
+        foreach (var (name, _) in raw)
         {
+            if (!idByName.TryGetValue(name, out var pid)) continue;
+            var project = solution.GetProject(pid);
+            if (project is null) continue;
             var c = await project.GetCompilationAsync().ConfigureAwait(false);
             if (c is null)
             {

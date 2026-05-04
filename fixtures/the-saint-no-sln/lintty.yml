@@ -1,0 +1,9 @@
+canon_version: 1.0.0
+
+projects:
+  - src/Saint.Domain/Saint.Domain.csproj
+  - src/Saint.Application/Saint.Application.csproj
+  - src/Saint.Infrastructure/Saint.Infrastructure.csproj
+  - src/Saint.Web/Saint.Web.csproj
+
+rule_overrides: {}

@@ -24,6 +24,10 @@ public sealed class DeterminismTests
     public void Pdf_Generation_Is_Deterministic_Bit_For_Bit_Ninja01()
         => AssertDeterministic(FixturePaths.Ninja01ExpectedJson);
 
+    [Fact]
+    public void Pdf_Generation_Is_Deterministic_Bit_For_Bit_SaintNoSln()
+        => AssertDeterministic(FixturePaths.SaintNoSlnExpectedJson);
+
     private static void AssertDeterministic(string expectedJsonPath)
     {
         Assert.True(File.Exists(expectedJsonPath), $"Fixture missing: {expectedJsonPath}");

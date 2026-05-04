@@ -1,112 +1,111 @@
-# 01 — Visão e Modelo de Produto
+# 01 — Visão e Modelo de Produto (V0 Real)
 
-> **Nota Sales Cut (pivô 2026-04-27 — Zero-IA, Zero-Custo):** o V0 do produto roda **100% determinístico** (motor Roslyn type-aware + PDF gerado pelo motor via QuestPDF). A camada LLM e ZDR Anthropic ficam em **roadmap V1+**. Todas as referências a "IA / LLM / advogado de defesa / inference_signature" abaixo descrevem o **estado de produção alvo**, não o que está em campo no Sales Cut. Ver `docs/12-sales-cut.md` (reformulado).
+> Versão lean alinhada ao escopo atual: **CLI determinístico + Web Inspector**. A versão completa do blueprint (com LLM, dashboard self-service, billing wallet, hash-chain, SOC 2) foi preservada em [`futuro/product-vision-blueprint.md`](futuro/product-vision-blueprint.md). **Não usar a versão de futuro como referência operacional** — é roadmap, não realidade.
 
 ## Visão
 
-Lintty é um **árbitro técnico de arquitetura de software em tempo real**, operado como SaaS B2B. Sua função é resolver um problema concreto do mercado enterprise:
+Lintty é um **árbitro técnico de arquitetura .NET**. Dado um `.sln`, a gente aplica o Canon (regras Hexagonal/DDD) e devolve um **PDF de laudo determinístico** com nota A–F e lista de violações.
 
-> Quando grandes empresas terceirizam o desenvolvimento de seus sistemas, elas não têm como auditar a qualidade estrutural do código entregue até que seja tarde demais — quando o sistema falha em escalar, em integrar, ou em sustentar mudanças.
+A promessa central é **auditabilidade por construção**:
 
-Lintty preenche essa lacuna emitindo um **laudo técnico assinado digitalmente** que avalia a integridade arquitetural do código entregue, com base em regras explícitas e auditáveis.
+1. **100% determinístico** — mesmo input gera o mesmo PDF, byte por byte. Zero alucinação.
+2. **Zero IA no V0** — sem chamada a LLM, sem custo de inferência, sem dado saindo do escopo do scan.
+3. **Local-first** — no caminho default (CLI), o código fonte nunca sai do equipamento do cliente.
 
-## Posicionamento
+## O que Lintty é, e o que não é
 
-Lintty **é**:
-- Uma ferramenta SaaS de validação arquitetural automatizada.
-- Um oráculo técnico que emite laudos com hash criptográfico e timestamp de TSA confiável.
-- Um "selo de verificação" que o contratante usa, sob responsabilidade própria, para validar entregas de agências.
+**É:**
+- Ferramenta de validação arquitetural automatizada para C# / .NET 6+.
+- Oráculo técnico que emite um laudo PDF reproduzível, com hash do conteúdo no rodapé.
+- "Selo de revisão" que o contratante usa, sob responsabilidade própria, para validar entregas.
 
-Lintty **não é**:
+**Não é:**
 - Escrow financeiro. Não custodia dinheiro nem libera pagamento.
 - Árbitro jurídico. Não é parte do contrato entre contratante e agência.
-- Mediador humano. Não há equipe de revisão manual de disputas.
-
-Esse posicionamento foi escolhido conscientemente para manter operação enxuta, evitar regulação financeira (BCB, KYC/KYB), e preservar a clareza do produto.
+- Mediador humano. Não há equipe de revisão manual.
+- ~~Plataforma com painel multi-tenant, billing wallet, GitHub App, dashboard de tendências~~ — isso é V1+, está em `futuro/`.
 
 ## Mercado-alvo
 
-- **Compradores (contratantes):** empresas enterprise que terceirizam desenvolvimento de software .NET para agências externas.
-- **Vertical-foco no MVP (Sales Cut):** **varejo brasileiro de grande porte.** *(Decisão PO 2026-04-28 — `docs/manual-actions.md`.)* Outras verticais (financeiro, seguros) viram pipeline reativo (atendemos se chegarem), não outbound ativo.
-- **Geografia inicial:** **Brasil.** No Sales Cut a análise roda local; em V1+ a operação na nuvem fica em `us-east1` (GCP) com CDN para BR e expansão para data residency BR/EU.
-- **Tamanho da entrega típica:** projetos C#/.NET com solutions de 50k a 1M LoC.
+- **Contratantes:** empresas que terceirizam desenvolvimento .NET para agências externas, e querem evidência objetiva de que o que recebem segue padrão arquitetural.
+- **Vertical foco:** varejo brasileiro de grande porte (decisão PO 2026-04-28).
+- **Geografia inicial:** Brasil. No V0 a análise roda **local** (laptop do cliente ou backend local do Web Inspector).
+- **Tamanho típico:** solutions C# / .NET 6–9, 50k–1M LoC.
 
 ## Atores
 
-| Ator | Papel | Acesso e visão |
-|------|-------|----------------|
-| **Contratante** | Empresa que paga e consome o laudo | Painel executivo: score, tendências, métricas de acoplamento, laudo PDF. Não vê código fonte. |
-| **Agência** | Empresa que entrega código sob avaliação | Feedback granular nos PRs: linhas violadoras, sugestões de refatoração, score provisório. |
-| **Admin Lintty** | Equipe interna do produto | Gestão de contas, billing, suporte L2. Sem mediação técnica de disputas. |
+| Ator | Papel | Acesso |
+|------|-------|--------|
+| **Contratante** | Paga e consome o laudo | Roda CLI ou usa Web Inspector. Recebe PDF. |
+| **Agência** | Entrega código sob avaliação | Sem acesso direto à plataforma no V0. Recebe o laudo via Contratante. |
+| **Operador Lintty** | Quem mantém produto | No V0, opera o release do CLI e o backend do Web Inspector. Não recebe código fonte do cliente no caminho default. |
 
-A Agência é convidada como `External Contributor` ao Projeto pelo Contratante. Um único Contratante pode gerenciar múltiplas agências em projetos distintos sob o mesmo painel.
+> Em V1+ entram dashboard self-service, convite de agência como `External Contributor`, painel executivo, etc. Hoje, fora de escopo.
 
-## Modelo de Negócio
+## Os dois caminhos de consumo (V0)
 
-### Quem paga
+A spec detalhada de cada um está nos respectivos docs. Resumo aqui:
 
-O **Contratante** paga. A Agência usa a plataforma como ferramenta de feedback no fluxo de desenvolvimento.
+### Caminho A — CLI Self-Service (default)
 
-### Modelos de cobrança
+Cliente baixa o binário oficial (GitHub Releases, ver [`14-cli-distribution.md`](14-cli-distribution.md)), valida `sha256`, e roda no equipamento dele:
 
-Dois SKUs no MVP:
+```bash
+lintty-engine analyze --solution MeuProjeto.sln --pdf laudo.pdf
+```
 
-1. **Pay-per-Scan (Milestone Audit)** — modelo principal de receita.
-   - 1 scan = 1 auditoria oficial de Milestone que gera o PDF (assinado em V1+).
-   - Tiering estrutural por LoC (valor calibrado com primeiro piloto):
-     - Até 50k LoC: 1×
-     - 50k–200k LoC: 2×
-     - 200k–1M LoC: 4×
-     - \>1M LoC: cotação enterprise
-   - Sales Cut: cobrança via TED + NF-e manual. Stripe entra em V1.
-   - **Pivô Zero-IA (2026-04-27):** removido o modelo de "pacotes de créditos" — vinculava-se a custo de inferência LLM, que não existe no Sales Cut. Volta como possível SKU em V1 se houver demanda.
+**Postura jurídica:** Lintty é fornecedor de software licenciado. Não há tratamento de dados pelo Lintty. Vínculo é EULA. Decisão original em [ADR 0005](adr/0005-distribution-model.md).
 
-2. **Continuous Feedback Subscription** — V1+, opcional, complementa o Pay-per-Scan.
-   - Assinatura mensal por repositório.
-   - Permite scans ilimitados em PRs (advisory, não geram PDF).
-   - Mantém engajamento da agência durante o desenvolvimento.
+### Caminho B — Web Inspector
 
-### Não há (no MVP)
+Cliente acessa `lintty.com/inspect`, cola URL do GitHub (público ou via PAT temporário), backend clona shallow, roda o **mesmo CLI**, devolve o **mesmo PDF**, descarta o clone. Spec em [`13-web-inspector.md`](13-web-inspector.md).
 
-- Trial gratuito, free tier, ou pricing freemium.
-- Split de pagamento entre contratante/agência.
-- Cobrança recorrente baseada em uso (consumo medido pós-fatura).
+**Postura jurídica:** Lintty é Operador de tratamento (LGPD art. 5º VII) durante a janela do scan. DPA exigido para uso comercial recorrente. Análise efêmera, descarte imediato.
 
-## Milestone vs. PR — distinção crítica
+> O caminho B existe **para conveniência e demo**. Nenhum dos dois caminhos depende de IA, de cloud externa, ou de assinatura digital qualificada — todos são V1+.
 
-A separação entre os dois tipos de scan é fundacional. Foram desenhados como produtos distintos:
+## Modelo de cobrança no V0
 
-| Atributo | Scan de PR | Milestone Audit |
-|----------|------------|-----------------|
-| **Quando dispara** | Cada push em PR | Solicitação explícita ("Solicitar Auditoria Oficial") |
-| **Custo** | Coberto pela subscription mensal por repo (ou grátis se não houver subscription) | Consome 1+ créditos Pay-per-Scan |
-| **Resultado visível** | GitHub Check Status + grade provisória no painel | Laudo PDF assinado + atualização de tendências oficiais |
-| **PDF gerado?** | Não | Sim (PAdES + TSA) |
-| **Bloqueia merge?** | Configurável (Required Status Check via branch protection) | Não bloqueia merge — gera artefato de aceite |
-| **Aparece em "rescan_index"?** | Não | Sim — quantas vezes este Milestone foi repetido aparece impresso no PDF |
+**Ainda não cobramos via produto.** No V0:
 
-A separação evita que a agência dispare 80 PRs até "encontrar" um A e se autodeclare pronta. O Milestone é evento explícito, formal, com peso probatório.
+- CLI baixado é **gratuito para download** (licença restritiva, mas binário acessível).
+- Web Inspector tem **rate-limit** anônimo (ex: 3 scans/dia/IP) e **acesso pago via TED + NF-e manual** para uso recorrente, calibrado caso a caso com o primeiro piloto.
+- Sem Stripe, sem wallet de créditos, sem trial — tudo isso é V1+ ([`futuro/data-and-flow.md`](futuro/data-and-flow.md)).
 
-## Mecânica de Disputa (sem mediação humana)
+A regra: **a precificação se calibra com o primeiro piloto pagante**. Antes disso, foco é validar a tese, não o pricing.
 
-Lintty resolve o problema de "agência discorda do laudo" via **três mecanismos automatizados** que substituem mediação:
+## O laudo PDF (artefato central de valor)
+
+O PDF é o que entrega valor. Características no V0:
+
+| Atributo | V0 (real) | V1+ (em `futuro/`) |
+|----------|-----------|---------------------|
+| Determinismo bit-a-bit | ✅ Garantido (fontes embedded, sem timestamps no conteúdo, build determinístico) | — |
+| Hash de integridade | ✅ `hash_content` = SHA-256 do JSON normalizado, no rodapé | — |
+| Conteúdo (capa A–F, violações com snippet, sumário de exceções, grafo de deps) | ✅ Implementado | — |
+| `canon_version` impresso | ✅ | — |
+| Assinatura PAdES + TSA | ❌ | V1+ |
+| Audit hash-chain imutável (Postgres + verificador externo) | ❌ | V1+ |
+| `inference_signature` (model + snapshot LLM) | ❌ (campo `null` no JSON) | V1+ |
+
+Spec do PDF em [ADR 0003](adr/0003-pdf-reporter.md).
+
+## Mecânica de disputa (sem mediação humana)
+
+Mesmo no V0, Lintty resolve "agência discorda do laudo" via três mecanismos automatizados:
 
 ### 1. Comentários `@lintty-ignore` no código
 
-A agência pode suprimir uma violação reclamada como falso positivo via comentário de código:
-
 ```csharp
-// @lintty-ignore: LNTY-004 reason="Método é tradução EF Core, não regra de negócio"
-public async Task<Order> Save(Order o) { ... }
+// @lintty-ignore: LNTY-009 reason="Switch grande é exigência de protocol parser HL7"
 ```
 
-Regras da supressão:
-- **Justificativa obrigatória** (>30 caracteres). Justificativas vazias ou genéricas invalidam.
-- Justificativa é **impressa no PDF** como "Sumário de Exceções" na primeira página, junto ao email do autor git.
+- Justificativa obrigatória ≥ 30 caracteres.
+- Justificativa é **impressa no PDF** como Sumário de Exceções, junto ao email do autor git.
 
-### 2. Hard Locks em violações Críticas
+### 2. Hard locks em violações Críticas
 
-Algumas regras são **não-suprimíveis**, independente de `@lintty-ignore`. Se houver qualquer violação Crítica aberta, o selo de aprovação (PDF assinado) **não é emitido**. São elas:
+Algumas regras são **não-suprimíveis**, independente de `@lintty-ignore`. Se houver qualquer violação Crítica aberta, o selo (grade A–C) **não é emitido**:
 
 - LNTY-001 (Domain Layer Isolation)
 - LNTY-002 (Persistence Contamination)
@@ -114,42 +113,34 @@ Algumas regras são **não-suprimíveis**, independente de `@lintty-ignore`. Se 
 
 ### 3. Cap de impunidade — 10% sobre Médias/Altas
 
-Mesmo nas regras suprimíveis, o número total de supressões válidas em um scan não pode exceder **10% das violações de severidade Média/Alta**. Excedeu, o score cai automaticamente para **F**, independente das supressões.
+Total de supressões válidas em um scan não pode exceder **10% das violações de severidade Média/Alta**. Excedeu, score cai automaticamente para **F**.
 
-### Resultado
+Detalhes em [`02-canon-v1.md`](02-canon-v1.md).
 
-A agência tem espaço para defender legítimos falsos positivos com transparência, mas não pode "limpar" uma entrega ruim só ignorando tudo. O contratante recebe um sumário de exceções claro. Lintty não precisa julgar quem está certo — os fatos e os limites são auditáveis no laudo.
+## Linha do tempo de uso (V0)
 
-## O Laudo PDF (artefato central de valor)
+### Caminho CLI
 
-O Milestone Audit gera um PDF/A com as seguintes características:
+1. Cliente baixa `lintty-engine` (GitHub Releases), valida sha256.
+2. Roda contra a `.sln` da entrega: `lintty-engine analyze --solution X.sln --pdf laudo.pdf`.
+3. Recebe o PDF localmente. Compartilha com a agência se quiser.
+4. Repete por Milestone, manualmente.
 
-| Atributo | Descrição |
-|----------|-----------|
-| **Assinatura** | PAdES-B-LT, certificado digital corporativo Lintty |
-| **Timestamp** | RFC 3161 via TSA confiável (DigiCert, FreeTSA ou equivalente) |
-| **Hash** | SHA-256 do PDF imutável, registrado no audit chain |
-| **Distribuição** | URL compartilhável com token HMAC + expiração + download direto |
+### Caminho Web Inspector
 
-Conteúdo obrigatório do PDF:
-- Sumário executivo com score (A-F)
-- Versão do Canon utilizada (ex: "Auditado sob Lintty Canon v1.0.0")
-- `inference_signature`: model + snapshot + hashes de prompt/few-shot
-- `rescan_index`: quantas vezes este Milestone foi repetido pela mesma entrega
-- Lista de violações com referência (arquivo, linha, evidência estruturada)
-- Sumário de Exceções: todas as supressões `@lintty-ignore` com justificativa e autor
-- Grafo visual de dependências (alto nível)
-- Rodapé técnico com `inference_signature` para reprodutibilidade
+1. Cliente acessa `lintty.com/inspect`.
+2. Cola URL do GitHub (`https://github.com/org/repo`), opcional commit/branch.
+3. Backend valida URL, clona shallow, roda o CLI, devolve PDF para download.
+4. Clone descartado. Hash do PDF/JSON registrado em log de auditoria operacional (não cliente-facing).
 
-O PDF é a peça que dá "fé pública" ao laudo sem que Lintty seja parte do contrato jurídico.
+## O que mudou em relação ao Blueprint completo
 
-## Linha do tempo de uso (jornada do contratante)
+| Tema | Blueprint v1.0 (em `futuro/`) | V0 (real) |
+|------|-------------------------------|-----------|
+| Motor | Cloud Run sandbox + Anthropic LLM | Local: CLI .NET, sem cloud, sem LLM |
+| Onboarding | GitHub App + dashboard self-service | Download direto + cola URL no site |
+| Billing | Stripe + wallet de créditos | TED + NF-e manual (quando pagante) |
+| Compliance | SOC 2 Type I, PAdES + TSA, hash-chain | LGPD básica + DPA simples + hash do PDF no rodapé |
+| Atores | Multi-tenant (Contratante + Agência + Admin) | Single-user no V0 (Contratante roda) |
 
-1. Contratante cria conta no Lintty, instala o GitHub App na sua organização GitHub.
-2. Cria um Projeto, vincula um Repositório, convida a Agência.
-3. No momento da criação, o Projeto **pina uma versão imutável do Canon** (ex: v1.0.0). Toggles de regras são editados via dashboard, gerando PR automático no `lintty.yml` do repo.
-4. Agência desenvolve normalmente. Em cada PR, Lintty roda scan advisory (se subscription ativa) e posta GitHub Check Status com grade provisória.
-5. Quando a entrega está pronta, Contratante (ou Agência autorizada) clica "Solicitar Auditoria Oficial" no painel ou via comando `/lintty-audit` no PR.
-6. Motor roda: Build Gate → Roslyn → IA seletiva → Score → PDF assinado.
-7. Email com link do PDF é enviado para Contratante e Agência. Painel atualiza tendências.
-8. Crédito Pay-per-Scan é debitado da wallet do Contratante.
+A versão completa **vive como roadmap em [`futuro/`](futuro/)**. Não é mais a referência operacional — é referência aspiracional.

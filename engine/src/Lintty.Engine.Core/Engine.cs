@@ -39,16 +39,44 @@ public sealed class LinttyEngine
         };
     }
 
-    public async Task<ReportDto> AnalyzeAsync(string solutionPath, string? canonVersionOverride)
+    public Task<ReportDto> AnalyzeAsync(string solutionPath, string? canonVersionOverride)
     {
-        var fullPath = Path.GetFullPath(solutionPath);
-        var solutionDir = Path.GetDirectoryName(fullPath)!;
-        var configPath = Path.Combine(solutionDir, "lintty.yml");
+        // Back-compat overload: callers passing a raw .sln path keep working.
+        // New callers should resolve a ResolvedTarget via TargetResolver
+        // (ADR 0006) and use the overload below.
+        var resolved = ResolvedTarget.ForSolution(Path.GetFullPath(solutionPath));
+        return AnalyzeAsync(resolved, canonVersionOverride);
+    }
+
+    public async Task<ReportDto> AnalyzeAsync(ResolvedTarget target, string? canonVersionOverride)
+    {
+        // Reporting base: the directory the report's solution_path is relative
+        // to. For a .sln target, that's the .sln directory; for a project list
+        // (lintty.yml-driven OR a single --target Foo.csproj), that's the
+        // directory of the SolutionPathForReporting (the lintty.yml dir, or
+        // the .csproj parent for a bare-csproj target).
+        var reportingPath = target.SolutionPathForReporting;
+        var reportingDir = Path.GetDirectoryName(Path.GetFullPath(reportingPath))!;
+
+        // Config directory: prefer the lintty.yml directory when known, else
+        // walk up from the reporting path.
+        var configDir = target.YamlDir ?? reportingDir;
+        var configPath = Path.Combine(configDir, "lintty.yml");
         var config = LinttyConfig.LoadOrDefault(File.Exists(configPath) ? configPath : null);
         var canonVersion = canonVersionOverride ?? config.CanonVersion;
 
         var loader = new SolutionLoader();
-        var loaded = await loader.LoadAsync(fullPath).ConfigureAwait(false);
+        SolutionLoader.LoadResult loaded;
+        if (target.IsSolution)
+        {
+            loaded = await loader.LoadFromSolutionAsync(target.SolutionPath!).ConfigureAwait(false);
+        }
+        else
+        {
+            loaded = await loader.LoadFromProjectListAsync(
+                target.ProjectListPaths,
+                target.SolutionPathForReporting).ConfigureAwait(false);
+        }
         var tagger = new LayerTagger(config);
 
         var layerByProject = new Dictionary<string, Layer>(StringComparer.Ordinal);
@@ -57,8 +85,8 @@ public sealed class LinttyEngine
 
         var context = new AnalysisContext
         {
-            SolutionPath = fullPath,
-            SolutionDir = solutionDir,
+            SolutionPath = reportingPath,
+            SolutionDir = reportingDir,
             Projects = loaded.Projects,
             LayerByProject = layerByProject,
             ProjectReferences = loaded.ProjectReferences,
@@ -107,8 +135,8 @@ public sealed class LinttyEngine
 
         var report = BuildReport(
             canonVersion: canonVersion,
-            solutionPath: fullPath,
-            solutionDir: solutionDir,
+            solutionPath: reportingPath,
+            solutionDir: reportingDir,
             violations: sortedViolations,
             suppressions: suppressions,
             scoring: scoring,

@@ -4,18 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-Lintty is a B2B SaaS architecture oracle for outsourced .NET development. It analyzes a `.sln`, applies the **Lintty Canon** (architectural rules — Hexagonal/DDD), and emits a signed PDF audit report (the "laudo").
+Lintty is a B2B architecture oracle for outsourced .NET development. It analyzes a `.sln`, applies the **Lintty Canon** (architectural rules — Hexagonal/DDD), and emits a deterministic PDF audit report (the "laudo").
 
-**Current phase: Sales Cut Tier 1 (pre-revenue validation).** Per the 2026-04-27 "Zero-IA, Zero-Cost" pivot, the V0 product runs **100% deterministic — Roslyn engine + QuestPDF reporter, no LLM, no cloud**. Authoritative scope and tradeoffs live in `docs/12-sales-cut.md`. Do not reintroduce LLM, GCP infra, PAdES signing, or hash-chain work without explicit "go" — those are V1+. The argument of sale is "same input → same PDF, byte-for-byte; zero hallucination."
+**Current phase: V0 — deterministic CLI + Web Inspector (in build).** Per the 2026-04-27 Zero-IA pivot and the 2026-04-30 doc resize, the V0 product runs **100% deterministic — Roslyn engine + QuestPDF reporter, no LLM, no cloud beyond a single VM/Cloud Run service for the Web Inspector**. Two consumption paths:
+
+1. **CLI Self-Service (default, [ADR 0005](docs/adr/0005-distribution-model.md)):** client downloads the official binary from GitHub Releases, runs `lintty-engine analyze --solution X.sln --pdf laudo.pdf` locally. Source code never leaves their machine.
+2. **Web Inspector (in build, `docs/13-web-inspector.md`):** client pastes a GitHub URL on `lintty.com/inspect`, our backend shallow-clones, invokes the **same CLI**, returns the PDF, discards the clone.
+
+Authoritative current scope is **`docs/00-onde-estamos.md`** (TL;DR), then `docs/15-roadmap-curto.md` for the 8–12 week plan and `docs/12-sales-cut.md` for the sales angle. Do not reintroduce LLM, full GCP infra, PAdES signing, multi-tenant dashboards, billing wallets, or hash-chain work without explicit "go" — those live preserved in `docs/futuro/` as V1+ playbooks. The argument of sale is "same input → same PDF, byte-for-byte; zero hallucination; code never leaves your machine."
 
 ## Repository layout
 
 | Path | What it is | Status |
 |---|---|---|
-| `engine/` | .NET 8 solution `Lintty.Engine.sln` — the Roslyn engine (`Core`), CLI (`Cli`), audit PDF reporter (`Reporter`), and white-label brand PDF template (`Lintty.Docs.Pdf`, CLI `lintty-docs`) plus xUnit tests. **The only shipping code in the Sales Cut.** | Active |
+| `engine/` | .NET 8 solution `Lintty.Engine.sln` — the Roslyn engine (`Core`), CLI (`Cli`), audit PDF reporter (`Reporter`), and white-label brand PDF template (`Lintty.Docs.Pdf`, CLI `lintty-docs`) plus xUnit tests. **The only shipping code in the V0.** | Active |
 | `fixtures/the-saint/`, `the-sinner/`, `the-ninja-01/` | Demo solutions with `lintty.yml` and `expected.json`. Saint → grade A, Sinner → F + 3 hard locks, Ninja-01 → LNTY-002 via constant-folded SQL. | Active |
 | `landing/` | Static landing page (HTML + Tailwind CDN, no build step). `lintty.com` deploy target is Cloudflare Pages. | Active |
-| `docs/` | All design/spec docs. `01-11` = full Blueprint (LOCKED but partially V1+). `12-sales-cut.md` is the **authoritative current scope**. `adr/` holds ADRs. `sales/`, `compliance/`, `llm/` carry artifacts. | Active |
+| `docs/` | Design/spec docs aligned to V0 (`00-onde-estamos.md`, `01-product-vision.md`, `02-canon-v1.md`, `03-motor-cli.md`, `09`, `11`, `12`, `13-web-inspector.md`, `14-cli-distribution.md`, `15-roadmap-curto.md`). `adr/` holds active ADRs. `sales/`, `compliance/`, `brand/` carry artifacts. Read `docs/README.md` for the index. | Active |
+| `docs/futuro/` | **V1+ blueprint preserved** — full LLM, GCP, multi-tenant, SOC 2, PAdES, hash-chain plans. **Do not use as operational reference.** Don't build from these without explicit "go". | Roadmap |
 | `docs/docs/` | Stale duplicate of `docs/` from earlier copy; **prefer the top-level `docs/`**. Don't write here. | Stale |
 | `orchestrator/` | Python LLM orchestrator stub. **Deferred V1+.** Don't implement against it. | Stub |
 | `.claude/agents/` | Specialized subagent definitions. See "Subagents" below. | Active |
@@ -50,7 +56,7 @@ dotnet run --project src/Lintty.Engine.Cli -- analyze \
 
 1. `Workspace/SolutionLoader` — `MSBuildLocator` + `MSBuildWorkspace`, captures non-fatal warnings as `WorkspaceDiagnostic`s.
 2. `Tagging/LayerTagger` + `LinttyConfig` (parses `lintty.yml`) — classifies each `.csproj` as Domain/Application/Infrastructure/Presentation/DomainAbstractions. **Fail-fast:** if convention mode can't classify a project and there's no `explicit_map` entry, the scan errors with `LayerTaggingError`. **Never add a guessing fallback.**
-3. `Analyzers/Lnty00*` run in fixed order against the loaded `Compilation`s. Each implements `IAnalyzer.AnalyzeAsync(AnalysisContext) → IReadOnlyList<Violation>`. **Active rules in Sales Cut: 001, 002, 003, 006, 007, 008, 009 (7 rules).** LNTY-004/005 require an LLM and are deferred V1+ — don't wire them up. LNTY-001/002/007 are **hard locks** (non-suppressible).
+3. `Analyzers/Lnty00*` run in fixed order against the loaded `Compilation`s. Each implements `IAnalyzer.AnalyzeAsync(AnalysisContext) → IReadOnlyList<Violation>`. **Active rules in V0: 001, 002, 003, 006, 007, 008, 009 (7 rules).** LNTY-004/005 require an LLM and are deferred V1+ — don't wire them up. LNTY-001/002/007 are **hard locks** (non-suppressible).
 4. `Suppressions/LinttyIgnoreParser` — extracts `// @lintty-ignore: LNTY-XXX reason="..."` comments, validates (≥30 chars, rule exists, not a hard lock).
 5. `Scoring/Scorer` — Canon formula (weights C=25/H=10/M=4/L=1, score rounded to nearest 5, clamped 0–100); any open Critical or suppression cap >10% of Med/High forces grade `F` and `seal_eligible=false`.
 6. `Output/JsonReport` + `ReportSchema` — serializes the `ReportDto`. Fields are **sorted deterministically** (file, line, column, rule_id, fingerprint); culture is `Invariant`. Schema is locked at `1.0` and documented in ADR 0001 §3 — preserve every field even when unused (`inference_signature: null`, `ai_candidates: []`, etc.).
@@ -86,21 +92,28 @@ Use the right one rather than doing everything in the main thread:
 - `tech-writer-sales` — `docs/sales/`, deck, talk-track, landing copy, laudo PDF copy.
 - `frontend-dev` — `landing/` and any future dashboard mockups.
 - `security-compliance` — `docs/compliance/`, DPA, LGPD, signing roadmap.
-- `ai-llm-engineer`, `backend-dev-cloud` — exist for V1+; **don't invoke for Sales Cut work** (no LLM, no GCP).
+- `ai-llm-engineer`, `backend-dev-cloud` — exist for V1+; **don't invoke for V0 work** (no LLM, no full GCP). The Web Inspector backend is small enough to build with `backend-dev-dotnet` (it's an ASP.NET minimal API wrapping the existing CLI).
 
 ## Things to leave alone unless explicitly asked
 
-- The orchestrator stub (`orchestrator/`) and the LLM specs (`docs/04-llm-ops.md`, `docs/adr/0002-llm-sprint-1.md`, `docs/llm/`, `docs/compliance/zdr-anthropic-plan.md`) — preserved as V1+ playbooks.
-- The JSON `schema_version: "1.0"` and the placeholder fields it carries.
+- The orchestrator stub (`orchestrator/`) and the LLM specs in `docs/futuro/` (`llm-ops.md`, `adr-0002-llm-sprint-1.md`, `llm/`, `compliance-zdr-anthropic-plan.md`) — preserved as V1+ playbooks.
+- The whole `docs/futuro/` tree — historical / aspirational. Read it for context but don't operate against it.
+- The JSON `schema_version: "1.0"` and the placeholder fields it carries (`inference_signature: null`, `audit_chain: null`, etc).
 - The `--pdf` no-flag default (CLI must keep working without it).
 - `hash_content` (don't switch to `hash_pdf`).
 - Hard locks list (`LNTY-001`, `LNTY-002`, `LNTY-007`) and the 10% suppression cap — both are canon-defined.
 
-## Authoritative references
+## Authoritative references (V0)
 
-- `docs/12-sales-cut.md` — current scope (read first).
+- `docs/00-onde-estamos.md` — TL;DR, read first.
+- `docs/01-product-vision.md` — V0 product model (lean, no LLM/PAdES/SOC 2).
 - `docs/02-canon-v1.md` — the 9 rules, scoring, suppression rules.
-- `docs/03-motor-roslyn.md` — engine spec.
+- `docs/03-motor-cli.md` — engine spec for V0 (no Cloud Run / no LLM).
+- `docs/12-sales-cut.md` — sales angle and demo script.
+- `docs/13-web-inspector.md` — spec for the GitHub-URL → PDF flow.
+- `docs/14-cli-distribution.md` — CLI release pipeline and download UX.
+- `docs/15-roadmap-curto.md` — realistic 8–12 week plan.
 - `docs/adr/0001-motor-skeleton.md` — JSON contract, exit codes, packages.
 - `docs/adr/0003-pdf-reporter.md` — QuestPDF stack, layout, determinism strategy.
+- `docs/adr/0005-distribution-model.md` — CLI Self-Service as default; Concierge as fallback.
 - `docs/manual-actions.md` — the running list of human-only TODOs (logo, CNPJ, lawyer, demo repos).

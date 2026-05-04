@@ -13,6 +13,8 @@ public static class FixturePaths
     public static string Saint => Path.Combine(RepoRoot, "fixtures", "the-saint", "Saint.sln");
     public static string Sinner => Path.Combine(RepoRoot, "fixtures", "the-sinner", "Sinner.sln");
     public static string Ninja01 => Path.Combine(RepoRoot, "fixtures", "the-ninja-01", "Ninja01.sln");
+    public static string SaintNoSlnDir => Path.Combine(RepoRoot, "fixtures", "the-saint-no-sln");
+    public static string SaintNoSlnYaml => Path.Combine(SaintNoSlnDir, "lintty.yml");
 
     private static string LocateRoot()
     {

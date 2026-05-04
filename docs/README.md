@@ -1,64 +1,103 @@
-# Lintty — Blueprints v1.0
+# Lintty — Documentação (V0)
 
-**Status:** Design conceitual completo. Todos os 4 eixos travados. Implementação ainda não iniciada.
+**Status:** V0 em construção. Motor + PDF prontos. Falta release oficial do CLI e Web Inspector. Plano em [`15-roadmap-curto.md`](15-roadmap-curto.md).
 
-Lintty é uma plataforma SaaS B2B que atua como **árbitro técnico de arquitetura de software** entre empresas contratantes (enterprise) e agências de desenvolvimento terceirizadas. O produto emite laudos arquiteturais com peso probatório, baseados em análise estática profunda (Roslyn) combinada com inferência semântica seletiva via IA (Anthropic Claude).
+Lintty é um **árbitro técnico de arquitetura .NET**. Recebe um `.sln`, aplica o Canon (Hexagonal/DDD), devolve um **PDF de laudo determinístico** com nota A–F.
 
-Lintty **não é** escrow financeiro, **não é** árbitro jurídico e **não tem** equipe de mediação humana. É um oráculo técnico cujo laudo é usado pelas partes envolvidas sob responsabilidade própria.
+**Promessa central:** 100% determinístico, zero IA, zero alucinação, mesmo input → mesmo PDF byte por byte.
+
+> **Importante:** o V0 atual é deliberadamente enxuto. A versão completa do blueprint (com LLM, GCP, multi-tenant, billing, SOC 2, PAdES, audit hash-chain) está preservada em [`futuro/`](futuro/) como roadmap aspiracional — **não é referência operacional.**
 
 ---
 
-## Índice da documentação
+## Por onde começar
+
+| Você quer... | Vá para |
+|--------------|---------|
+| Visão geral em 3 minutos | [`00-onde-estamos.md`](00-onde-estamos.md) |
+| Entender o produto (V0 real) | [`01-product-vision.md`](01-product-vision.md) |
+| Ver as 7 regras ativas e como pontuamos | [`02-canon-v1.md`](02-canon-v1.md) |
+| Mexer no motor / CLI | [`03-motor-cli.md`](03-motor-cli.md) |
+| Construir o **Web Inspector** (GitHub URL → PDF) | [`13-web-inspector.md`](13-web-inspector.md) |
+| Empacotar e distribuir o CLI | [`14-cli-distribution.md`](14-cli-distribution.md) |
+| Roadmap real das próximas 8–12 semanas | [`15-roadmap-curto.md`](15-roadmap-curto.md) |
+| Pitch / venda / talk-track | [`12-sales-cut.md`](12-sales-cut.md) + `sales/` |
+| ADRs (decisões arquiteturais) | [`adr/`](adr/) |
+| Glossário de termos | [`11-glossary.md`](11-glossary.md) |
+| Estratégia de testes (golden suite) | [`09-golden-tests.md`](09-golden-tests.md) |
+| Compliance / DPA / advogado | [`compliance/`](compliance/) |
+| Identidade visual / PDFs institucionais | [`brand/`](brand/) |
+| Lista de TODOs humanos pendentes | [`manual-actions.md`](manual-actions.md) |
+
+---
+
+## Índice
+
+### V0 (referência operacional)
 
 | # | Documento | Conteúdo |
 |---|-----------|----------|
-| 01 | [Visão e Modelo de Produto](01-product-vision.md) | Posicionamento, mercado, modelo de receita, atores, mecânica de disputa |
-| 02 | [Canon v1.0](02-canon-v1.md) | As 9 regras travadas, governança via `lintty.yml`, score, supressões |
-| 03 | [Motor Roslyn](03-motor-roslyn.md) | Pipeline de análise, algoritmos por regra, semantic slicing, contrato de saída |
-| 04 | [LLM Ops](04-llm-ops.md) | Provedor, prompts, auto-consistência, guardrails, reprodutibilidade |
-| 05 | [Infraestrutura GCP](05-infra-gcp.md) | Organização, rede, compute, dados, mensageria, CI/CD, observabilidade |
-| 06 | [Modelo de Dados e Fluxo](06-data-and-flow.md) | Entidades, multi-tenancy, fluxo Milestone end-to-end, fluxo PR |
-| 07 | [Segurança e Compliance](07-security-compliance.md) | Modelo de ameaça, sandbox, audit hash-chain, SOC 2, LGPD |
-| 08 | [Plano de Execução](08-execution-plan.md) | Pre-flight checklist, sprints, primeira contratação |
-| 09 | [Golden Tests](09-golden-tests.md) | Estratégia de teste, casos Saint/Sinner/Ninja, progressão |
-| 10 | [Roadmap e Gaps](10-roadmap-gaps.md) | O que está especificado, o que falta, o que está adiado |
-| 11 | [Glossário](11-glossary.md) | Termos, acrônimos e conceitos centrais |
-| 12 | [Sales Cut](12-sales-cut.md) | **Versão enxuta para validar a tese antes do MVP completo** (4-7 semanas vs 6 meses) |
+| 00 | [Onde estamos (TL;DR)](00-onde-estamos.md) | Status atual, 2 caminhos de uso, próximos passos |
+| 01 | [Visão e Modelo (V0)](01-product-vision.md) | Posicionamento real, dois caminhos, mecânica de disputa |
+| 02 | [Canon v1.0](02-canon-v1.md) | As 7 regras ativas, score, supressões, hard locks |
+| 03 | [Motor CLI](03-motor-cli.md) | Pipeline, contrato CLI, determinismo, layer tagging |
+| 09 | [Golden Tests](09-golden-tests.md) | Saint, Sinner, Ninja — gate de qualidade |
+| 11 | [Glossário](11-glossary.md) | Termos e acrônimos |
+| 12 | [Sales Cut](12-sales-cut.md) | Roteiro de demo, deck, materiais de venda |
+| 13 | [Web Inspector](13-web-inspector.md) | Spec do fluxo "GitHub URL → PDF" |
+| 14 | [Distribuição CLI](14-cli-distribution.md) | Empacotamento, GitHub Releases, sha256 |
+| 15 | [Roadmap Curto](15-roadmap-curto.md) | Próximas 8–12 semanas, sprint a sprint |
+
+### ADRs (decisões travadas)
+
+| ADR | Decisão |
+|-----|---------|
+| [0001](adr/0001-motor-skeleton.md) | Esqueleto do motor, contrato JSON, exit codes |
+| [0003](adr/0003-pdf-reporter.md) | PDF Reporter via QuestPDF, hash_content, fontes embedded |
+| [0004](adr/0004-brand-pdf-template.md) | Template white-label de PDF institucional |
+| [0005](adr/0005-distribution-model.md) | CLI Self-Service como default; Concierge como fallback |
+
+> ADR 0002 (LLM Sprint 1) está em [`futuro/`](futuro/) — fora de escopo no V0.
+
+### Subpastas
+
+- [`sales/`](sales/) — pitch deck, talk track, landing copy, mock do laudo
+- [`compliance/`](compliance/) — DPA template, briefing para advogado, política de privacidade
+- [`brand/`](brand/) — identidade visual e padrão de PDF institucional
+- [`adr/`](adr/) — Architecture Decision Records ativos
 
 ---
 
-## Status dos eixos de design
+## `futuro/` — planejamento V1+ (não construir ainda)
 
-| Eixo | Status | Documento principal |
-|------|--------|---------------------|
-| Canon v1.0 (regras) | ✅ LOCKED | `02-canon-v1.md` |
-| Motor Roslyn (extração determinística) | ✅ LOCKED | `03-motor-roslyn.md` |
-| Infraestrutura GCP (cofre) | ✅ LOCKED | `05-infra-gcp.md` |
-| LLM Ops (cérebro semântico) | ✅ LOCKED | `04-llm-ops.md` |
-| Dashboard UX | 🟡 ADIADO (após Sprint 2) | — |
-| Onboarding/Billing UX | 🟡 ADIADO (Sprint 3+) | — |
-| API pública | 🔴 v1+ | — |
+Tudo em [`futuro/`](futuro/) é **roadmap aspiracional preservado**, não referência operacional. Não construir antes de sinal comercial claro (piloto pagante, term sheet, ou 3+ prospects qualificados).
 
----
-
-## Princípios fundadores
-
-1. **Verdade arquitetural, não opinião.** Determinismo onde possível; IA apenas para zonas cinza, com guardrails e reprodutibilidade.
-2. **Operação enxuta.** Sem mediação humana. Disputas são desenhadas para fora via hard locks, caps de supressão e transparência total no PDF.
-3. **Opinionado por design.** Canon prescritivo (Hexagonal/DDD), com toggles. Sem custom rules no MVP.
-4. **Custo idle próximo de zero.** Serverless (Cloud Run), Pub/Sub, GCS — escala com uso, não com infra.
-5. **Compliance desde o dia 1.** SOC 2 Type I no mês 12 é meta; controles iniciais já apontam para lá.
+| Arquivo | Era... |
+|---------|--------|
+| [`futuro/product-vision-blueprint.md`](futuro/product-vision-blueprint.md) | `01-product-vision.md` original (versão completa com LLM, dashboard, billing) |
+| [`futuro/motor-roslyn-blueprint.md`](futuro/motor-roslyn-blueprint.md) | `03-motor-roslyn.md` original (com Cloud Run sandbox + semantic slicing LLM) |
+| [`futuro/llm-ops.md`](futuro/llm-ops.md) | LNTY-004 "advogado de defesa", prompts, ZDR Anthropic |
+| [`futuro/infra-gcp.md`](futuro/infra-gcp.md) | GCP completo: VPC, Cloud Run, Cloud SQL, Pub/Sub |
+| [`futuro/data-and-flow.md`](futuro/data-and-flow.md) | Multi-tenancy, billing wallet, fluxo Milestone end-to-end |
+| [`futuro/security-compliance.md`](futuro/security-compliance.md) | SOC 2, audit hash-chain, modelo de ameaça, sandbox |
+| [`futuro/execution-plan.md`](futuro/execution-plan.md) | Plano de execução de 6 meses com Sprints 0–6 completos |
+| [`futuro/roadmap-gaps.md`](futuro/roadmap-gaps.md) | Roadmap de longo prazo + gaps especificados |
+| [`futuro/adr-0002-llm-sprint-1.md`](futuro/adr-0002-llm-sprint-1.md) | ADR de integração LLM no Sprint 1 |
+| [`futuro/compliance-zdr-anthropic-plan.md`](futuro/compliance-zdr-anthropic-plan.md) | Playbook de Zero Data Retention com Anthropic |
+| [`futuro/llm/`](futuro/llm/) | Few-shots, prompts, mock verdicts |
 
 ---
 
-## Como navegar
+## Princípios fundadores (V0)
 
-- **Estou validando a tese (pre-revenue):** comece por **`12-sales-cut.md`** — versão enxuta de 4-7 semanas para vender a ideia antes de construir o MVP completo.
-- **Quero entender o produto rapidamente:** `01-product-vision.md`.
-- **Quero ver as regras técnicas em detalhe:** `02-canon-v1.md`.
-- **Vou implementar o motor:** `03-motor-roslyn.md` + `09-golden-tests.md`.
-- **Vou desenhar prompts/IA:** `04-llm-ops.md`.
-- **Vou subir a infra:** `05-infra-gcp.md` + `07-security-compliance.md`.
-- **Quero o roadmap completo e o que falta:** `08-execution-plan.md` + `10-roadmap-gaps.md`.
+1. **Verdade arquitetural, não opinião.** Determinismo onde possível; IA fica em V1+ para zonas cinza, com guardrails.
+2. **Operação enxuta.** Sem mediação humana. Disputas resolvidas via hard locks, caps de supressão e transparência total no PDF.
+3. **Opinionado por design.** Canon prescritivo (Hexagonal/DDD), com toggles. Sem custom rules no V0.
+4. **Local-first.** Caminho default é o cliente rodar o CLI no equipamento dele. Web Inspector é conveniência adicional.
+5. **Custo idle próximo de zero.** Sem cloud no V0; Web Inspector cabe em 1 VM ou 1 Cloud Run service.
 
-> **Recomendação prática:** se você ainda não tem 1 piloto pagante ou term sheet, **siga o `12-sales-cut.md`**. O Blueprint completo (docs 01-11) é a visão de longo prazo — não construa antes de validar.
+---
+
+## Recomendação prática
+
+Se você ainda **não tem um piloto pagante ou term sheet**, fica nos docs do V0. O Blueprint completo (em `futuro/`) é a visão de longo prazo — **não construir antes de validar.**

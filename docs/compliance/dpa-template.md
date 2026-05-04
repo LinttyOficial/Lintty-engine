@@ -229,5 +229,5 @@ Para os fins deste Acordo, aplicam-se as definições da LGPD (art. 5º), com de
 >
 > 1. Toda inserção de novo Sub-Operador requer revisão da §4.1.
 > 2. Mudança de região de tratamento (ex: GCP `us-east1` → `southamerica-east1`) requer revisão de §4.2.
-> 3. Alteração na política de retenção (`docs/07-security-compliance.md` §8) requer revisão de §5 e §10.
+> 3. Alteração na política de retenção (`docs/futuro/security-compliance.md` §8 — preservada como roadmap V1+) requer revisão de §5 e §10. No V0 a retenção é simples: clone descartado em ≤ 60s no Web Inspector; sem persistência de código no caminho CLI.
 > 4. Após primeira assinatura por cliente, usar como baseline e versionar. Cliente enterprise pode demandar customizações específicas — manter este template como fallback.

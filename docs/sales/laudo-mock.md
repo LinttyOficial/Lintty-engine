@@ -261,7 +261,7 @@ audit_chain_position: null  (audit chain entra em V1+)
 generated_by: lintty-engine 0.1.0 (QuestPDF reporter)
 ```
 
-> **Nota Sales Cut:** `inference_signature` permanece `null` enquanto a camada LLM estiver desativada (ver `docs/04-llm-ops.md` STATUS V1+). Quando reativada em Production MVP, o campo carrega a tupla `{model, model_snapshot_id, prompt_hash, few_shot_hash, system_prompt_hash, temperature}` conforme spec do ADR 0002 §6.
+> **Nota V0:** `inference_signature` permanece `null` enquanto a camada LLM estiver desativada (ver `docs/futuro/llm-ops.md` — V1+). Quando reativada, o campo carrega a tupla `{model, model_snapshot_id, prompt_hash, few_shot_hash, system_prompt_hash, temperature}` conforme spec do ADR 0002 (preservado em `docs/futuro/adr-0002-llm-sprint-1.md`) §6.
 
 ---
 
