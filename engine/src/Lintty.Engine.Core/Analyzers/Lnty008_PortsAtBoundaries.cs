@@ -43,71 +43,115 @@ public sealed class Lnty008_PortsAtBoundaries : IAnalyzer
 
                 foreach (var typeDecl in root.DescendantNodes().OfType<ClassDeclarationSyntax>())
                 {
-                    if (!IsPublic(typeDecl)) continue;
-
-                    var declSym = model.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
-                    if (declSym is null) continue;
-
-                    // Skip types that already implement at least one interface from
-                    // Domain or Domain.Abstractions.
-                    if (declSym.AllInterfaces.Any(i =>
-                        IsDomainAssembly(context, i.ContainingAssembly?.Name)))
-                    {
+                    if (!IsBoundaryCandidate(typeDecl, model, out var declSym))
                         continue;
-                    }
 
-                    // Heuristic match per canon MVP: I<TypeName> in Domain.
-                    if (domainInterfaceNames.Contains("I" + declSym.Name)) continue;
+                    if (HasMatchingPortInDomain(declSym!, context, domainInterfaceNames))
+                        continue;
 
-                    // Cross-assembly consumption check via FindReferencesAsync. If the
-                    // call throws (the AdhocWorkspace fallback can refuse this), treat
-                    // it as "consumed across assemblies" since the type is public —
-                    // the conservative choice for LNTY-008 in Sprint 0.
-                    bool crossAssemblyConsumed = true;
-                    try
-                    {
-                        var allRefs = await SymbolFinder.FindReferencesAsync(
-                            declSym, project.Solution).ConfigureAwait(false);
-                        crossAssemblyConsumed = allRefs.SelectMany(r => r.Locations)
-                            .Any(loc =>
-                            {
-                                var docProj = loc.Document?.Project;
-                                if (docProj is null) return false;
-                                return !string.Equals(docProj.AssemblyName,
-                                    declSym.ContainingAssembly?.Name,
-                                    StringComparison.Ordinal);
-                            });
-                    }
-                    catch
-                    {
-                        // FindReferencesAsync fall-through; assume cross-assembly so we
-                        // don't silently swallow a real LNTY-008 case.
-                        crossAssemblyConsumed = true;
-                    }
+                    if (!await IsConsumedAcrossAssembliesAsync(declSym!, project).ConfigureAwait(false))
+                        continue;
 
-                    if (!crossAssemblyConsumed) continue;
-
-                    var span = typeDecl.Identifier.GetLocation().GetLineSpan();
-                    results.Add(new Violation(
-                        RuleId: "LNTY-008",
-                        Severity: Severity.High,
-                        IsHardLock: false,
-                        File: context.RelativePath(tree.FilePath),
-                        Line: span.StartLinePosition.Line + 1,
-                        Column: span.StartLinePosition.Character + 1,
-                        SymbolFqn: declSym.ToDisplayString(),
-                        CodeSnippet: $"public class {declSym.Name}",
-                        AstKind: nameof(ClassDeclarationSyntax),
-                        AdditionalContext: new Dictionary<string, string>
-                        {
-                            ["missing_port"] = "I" + declSym.Name,
-                            ["expected_in"] = "domain",
-                        }));
+                    results.Add(BuildViolation(context, tree, typeDecl, declSym!));
                 }
             }
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// Filters out types that don't qualify for the LNTY-008 inspection: the
+    /// type must be a public class (private/internal types don't cross
+    /// assembly boundaries) and the SemanticModel must successfully resolve
+    /// it as a named type.
+    /// </summary>
+    private static bool IsBoundaryCandidate(
+        ClassDeclarationSyntax typeDecl,
+        SemanticModel model,
+        out INamedTypeSymbol? declSym)
+    {
+        declSym = null;
+        if (!IsPublic(typeDecl)) return false;
+        declSym = model.GetDeclaredSymbol(typeDecl) as INamedTypeSymbol;
+        return declSym is not null;
+    }
+
+    /// <summary>
+    /// Returns true when this Infrastructure type is fronted by a Domain port,
+    /// either by implementing a Domain-declared interface OR by matching the
+    /// canon MVP heuristic <c>I&lt;TypeName&gt;</c> living in Domain.
+    /// </summary>
+    private static bool HasMatchingPortInDomain(
+        INamedTypeSymbol declSym,
+        AnalysisContext context,
+        HashSet<string> domainInterfaceNames)
+    {
+        // Skip types that already implement at least one interface from
+        // Domain or Domain.Abstractions.
+        if (declSym.AllInterfaces.Any(i =>
+            IsDomainAssembly(context, i.ContainingAssembly?.Name)))
+        {
+            return true;
+        }
+
+        // Heuristic match per canon MVP: I<TypeName> in Domain.
+        return domainInterfaceNames.Contains("I" + declSym.Name);
+    }
+
+    /// <summary>
+    /// Cross-assembly consumption check via FindReferencesAsync. When
+    /// FindReferences refuses to operate (e.g., AdhocWorkspace fallback), we
+    /// conservatively treat the type as consumed across assemblies so we
+    /// never silently miss a real LNTY-008 case.
+    /// </summary>
+    private static async Task<bool> IsConsumedAcrossAssembliesAsync(
+        INamedTypeSymbol declSym,
+        Project project)
+    {
+        try
+        {
+            var allRefs = await SymbolFinder.FindReferencesAsync(
+                declSym, project.Solution).ConfigureAwait(false);
+            return allRefs.SelectMany(r => r.Locations)
+                .Any(loc =>
+                {
+                    var docProj = loc.Document?.Project;
+                    if (docProj is null) return false;
+                    return !string.Equals(docProj.AssemblyName,
+                        declSym.ContainingAssembly?.Name,
+                        StringComparison.Ordinal);
+                });
+        }
+        catch
+        {
+            // Conservative default — see method doc.
+            return true;
+        }
+    }
+
+    private static Violation BuildViolation(
+        AnalysisContext context,
+        SyntaxTree tree,
+        ClassDeclarationSyntax typeDecl,
+        INamedTypeSymbol declSym)
+    {
+        var span = typeDecl.Identifier.GetLocation().GetLineSpan();
+        return new Violation(
+            RuleId: "LNTY-008",
+            Severity: Severity.High,
+            IsHardLock: false,
+            File: context.RelativePath(tree.FilePath),
+            Line: span.StartLinePosition.Line + 1,
+            Column: span.StartLinePosition.Character + 1,
+            SymbolFqn: declSym.ToDisplayString(),
+            CodeSnippet: $"public class {declSym.Name}",
+            AstKind: nameof(ClassDeclarationSyntax),
+            AdditionalContext: new Dictionary<string, string>
+            {
+                ["missing_port"] = "I" + declSym.Name,
+                ["expected_in"] = "domain",
+            });
     }
 
     private static HashSet<string> CollectDomainInterfaceNames(AnalysisContext context)

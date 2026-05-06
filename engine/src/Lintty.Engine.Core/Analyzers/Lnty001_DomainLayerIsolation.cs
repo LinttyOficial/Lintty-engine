@@ -41,8 +41,7 @@ public sealed class Lnty001_DomainLayerIsolation : IAnalyzer
 
         foreach (var (project, compilation) in context.Projects)
         {
-            var layer = context.LayerByProject[project.Name];
-            if (layer != Layer.Domain) continue;
+            if (!IsDomainProject(context, project)) continue;
 
             foreach (var tree in compilation.SyntaxTrees)
             {
@@ -50,62 +49,92 @@ public sealed class Lnty001_DomainLayerIsolation : IAnalyzer
                 var model = compilation.GetSemanticModel(tree);
                 var root = await tree.GetRootAsync().ConfigureAwait(false);
 
-                // Pass A: using directives (cheap and explicit).
-                foreach (var u in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
-                {
-                    if (u.Name is null) continue;
-                    var info = model.GetSymbolInfo(u.Name);
-                    var symbol = info.Symbol ?? info.CandidateSymbols.FirstOrDefault();
-                    string ns;
-                    if (symbol is INamespaceSymbol nsSym)
-                        ns = nsSym.ToDisplayString();
-                    else if (symbol is INamedTypeSymbol typeSym)
-                        ns = typeSym.ContainingNamespace?.ToDisplayString() ?? string.Empty;
-                    else
-                        ns = u.Name.ToString();
-
-                    if (!IsForbidden(ns)) continue;
-
-                    var span = u.GetLocation().GetLineSpan();
-                    var key = (tree.FilePath, span.StartLinePosition.Line, span.StartLinePosition.Character, ns);
-                    if (!seen.Add(key)) continue;
-
-                    results.Add(BuildViolation(context, tree, u, ns,
-                        astKind: nameof(UsingDirectiveSyntax),
-                        snippet: u.ToString().Trim(),
-                        symbolFqn: ns,
-                        detectionPass: "using_directive"));
-                }
-
-                // Pass B: identifier references resolved through the semantic model.
-                // Only flag the first occurrence of each forbidden namespace per
-                // (file, line, column) to keep noise reasonable.
-                foreach (var id in root.DescendantNodes().OfType<IdentifierNameSyntax>())
-                {
-                    // Skip the LHS of a using directive (already handled above).
-                    if (id.FirstAncestorOrSelf<UsingDirectiveSyntax>() is not null) continue;
-
-                    var sym = model.GetSymbolInfo(id).Symbol;
-                    if (sym is null) continue;
-
-                    var ns = sym.ContainingNamespace?.ToDisplayString();
-                    if (string.IsNullOrEmpty(ns)) continue;
-                    if (!IsForbidden(ns)) continue;
-
-                    var span = id.GetLocation().GetLineSpan();
-                    var key = (tree.FilePath, span.StartLinePosition.Line, span.StartLinePosition.Character, ns);
-                    if (!seen.Add(key)) continue;
-
-                    results.Add(BuildViolation(context, tree, id, ns,
-                        astKind: nameof(IdentifierNameSyntax),
-                        snippet: id.ToString(),
-                        symbolFqn: sym.ToDisplayString(),
-                        detectionPass: "type_aware"));
-                }
+                AnalyzeUsingDirectives(context, tree, root, model, seen, results);
+                AnalyzeIdentifierReferences(context, tree, root, model, seen, results);
             }
         }
 
         return results;
+    }
+
+    private static bool IsDomainProject(AnalysisContext context, Project project)
+        => context.LayerByProject[project.Name] == Layer.Domain;
+
+    /// <summary>
+    /// Pass A: using directives (cheap and explicit). Each forbidden using
+    /// emits one violation, deduped by (file, line, column, ns) via the
+    /// shared <paramref name="seen"/> set.
+    /// </summary>
+    private static void AnalyzeUsingDirectives(
+        AnalysisContext context,
+        SyntaxTree tree,
+        SyntaxNode root,
+        SemanticModel model,
+        HashSet<(string file, int line, int col, string ns)> seen,
+        List<Violation> results)
+    {
+        foreach (var u in root.DescendantNodes().OfType<UsingDirectiveSyntax>())
+        {
+            if (u.Name is null) continue;
+            var info = model.GetSymbolInfo(u.Name);
+            var symbol = info.Symbol ?? info.CandidateSymbols.FirstOrDefault();
+            string ns;
+            if (symbol is INamespaceSymbol nsSym)
+                ns = nsSym.ToDisplayString();
+            else if (symbol is INamedTypeSymbol typeSym)
+                ns = typeSym.ContainingNamespace?.ToDisplayString() ?? string.Empty;
+            else
+                ns = u.Name.ToString();
+
+            if (!IsForbidden(ns)) continue;
+
+            var span = u.GetLocation().GetLineSpan();
+            var key = (tree.FilePath, span.StartLinePosition.Line, span.StartLinePosition.Character, ns);
+            if (!seen.Add(key)) continue;
+
+            results.Add(BuildViolation(context, tree, u, ns,
+                astKind: nameof(UsingDirectiveSyntax),
+                snippet: u.ToString().Trim(),
+                symbolFqn: ns,
+                detectionPass: "using_directive"));
+        }
+    }
+
+    /// <summary>
+    /// Pass B: identifier references resolved through the semantic model.
+    /// Only flag the first occurrence of each forbidden namespace per
+    /// (file, line, column) to keep noise reasonable.
+    /// </summary>
+    private static void AnalyzeIdentifierReferences(
+        AnalysisContext context,
+        SyntaxTree tree,
+        SyntaxNode root,
+        SemanticModel model,
+        HashSet<(string file, int line, int col, string ns)> seen,
+        List<Violation> results)
+    {
+        foreach (var id in root.DescendantNodes().OfType<IdentifierNameSyntax>())
+        {
+            // Skip the LHS of a using directive (already handled above).
+            if (id.FirstAncestorOrSelf<UsingDirectiveSyntax>() is not null) continue;
+
+            var sym = model.GetSymbolInfo(id).Symbol;
+            if (sym is null) continue;
+
+            var ns = sym.ContainingNamespace?.ToDisplayString();
+            if (string.IsNullOrEmpty(ns)) continue;
+            if (!IsForbidden(ns)) continue;
+
+            var span = id.GetLocation().GetLineSpan();
+            var key = (tree.FilePath, span.StartLinePosition.Line, span.StartLinePosition.Character, ns);
+            if (!seen.Add(key)) continue;
+
+            results.Add(BuildViolation(context, tree, id, ns,
+                astKind: nameof(IdentifierNameSyntax),
+                snippet: id.ToString(),
+                symbolFqn: sym.ToDisplayString(),
+                detectionPass: "type_aware"));
+        }
     }
 
     private static bool IsForbidden(string ns)
