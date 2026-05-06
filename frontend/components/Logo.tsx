@@ -25,6 +25,7 @@ export function Logo({ size = "md" }: LogoProps) {
         height={dim}
         className={size === "md" ? "w-8 h-8 object-contain" : "w-6 h-6 object-contain"}
         priority={size === "md"}
+        suppressHydrationWarning
       />
       <span>Lintty</span>
     </Link>

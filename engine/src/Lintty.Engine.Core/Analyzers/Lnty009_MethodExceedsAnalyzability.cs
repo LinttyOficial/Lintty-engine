@@ -11,15 +11,21 @@ namespace Lintty.Engine.Core.Analyzers;
 /// <summary>
 /// LNTY-009 — Method Exceeds Analyzability (Medium).
 ///
-/// Sprint 0 placeholder: no Anthropic tokenizer is bundled, so we approximate
-/// the budget. A method whose body has more than 60 LoC is reported with an
-/// estimated token count of <c>loc × 25</c>. The 8K-token cap from the canon
-/// translates to roughly 320 LoC on the same factor; we trip well below that
-/// threshold to surface the Sinner's <c>MegaRepository.DoEverything</c>
-/// without false positives on the Saint's normal-sized methods.
+/// V0 measure: a method whose body exceeds 60 physical LoC is reported. The
+/// metric tag in the JSON is <c>tokenizer=loc_v1</c> — honest about what we
+/// actually count today. <c>token_count_estimate</c> stays as <c>loc × 25</c>
+/// for clients that already consume the field, but it is informational only;
+/// the threshold is LoC.
 ///
-/// TODO Sprint 1: replace with the Anthropic tokenizer over the slice (see
-/// docs/03-motor-roslyn.md §5).
+/// Test code escapes this rule (and only this rule) — methods in
+/// <c>*.Tests.csproj</c> projects are skipped to avoid false positives on
+/// Arrange/Act/Assert blocks that are legitimately long. The other analyzers
+/// (LNTY-001/002/003/006/007/008) still run on tests because their concerns
+/// (domain isolation, persistence leaks, port crossings, cycles) apply
+/// equally to test code.
+///
+/// V1+ may swap the LoC ruler for a real tokenizer over the slice; that is a
+/// canon revision, not a cosmetic change.
 /// </summary>
 public sealed class Lnty009_MethodExceedsAnalyzability : IAnalyzer
 {
@@ -34,6 +40,8 @@ public sealed class Lnty009_MethodExceedsAnalyzability : IAnalyzer
 
         foreach (var (project, compilation) in context.Projects)
         {
+            // Test projects are exempt from LNTY-009 only — see class summary.
+            if (TestProjectFilter.IsTestProject(project)) continue;
             foreach (var tree in compilation.SyntaxTrees)
             {
                 if (GeneratedCodeFilter.IsGenerated(tree)) continue;
@@ -66,7 +74,7 @@ public sealed class Lnty009_MethodExceedsAnalyzability : IAnalyzer
                         {
                             ["loc_count"] = loc.ToString(System.Globalization.CultureInfo.InvariantCulture),
                             ["token_count_estimate"] = tokens.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                            ["tokenizer"] = "placeholder_sprint0",
+                            ["tokenizer"] = "loc_v1",
                         }));
                 }
             }

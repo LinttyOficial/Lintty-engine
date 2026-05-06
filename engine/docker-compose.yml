@@ -1,0 +1,42 @@
+# ============================================================================
+# Postgres for local dev of the Lintty Web Inspector (ADR 0007 Sprint 1).
+# ----------------------------------------------------------------------------
+# Usage from the repo root:
+#   docker compose -f engine/docker-compose.yml up -d
+#   docker compose -f engine/docker-compose.yml down          # stop
+#   docker compose -f engine/docker-compose.yml down -v       # stop + wipe volume
+#
+# The default appsettings.json connection string points at this exact instance:
+#   Host=localhost;Port=5433;Database=lintty_dev;Username=lintty;Password=lintty_dev
+#
+# Host port 5433 (not 5432) avoids conflict with a native Postgres install on
+# Windows. Container internal port stays 5432 — only the host-side mapping moved.
+#
+# Tests use Testcontainers.PostgreSql to spin up an ephemeral instance per
+# test class, so they do NOT depend on this compose stack being up. This
+# stack is for `dotnet run --project src/Lintty.WebInspector` only.
+# ============================================================================
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lintty-dev-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: lintty_dev
+      POSTGRES_USER: lintty
+      POSTGRES_PASSWORD: lintty_dev
+      # Faster fsync for dev only — never use this in prod.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    ports:
+      - "5433:5432"
+    volumes:
+      - lintty_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lintty -d lintty_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  lintty_pgdata:
+    name: lintty_dev_pgdata

@@ -25,6 +25,7 @@ export function Footer({ variant = "default" }: FooterProps) {
             width={24}
             height={24}
             className="w-6 h-6 object-contain"
+            suppressHydrationWarning
           />
           <span className="font-semibold text-ink">Lintty</span>
           <span className="ml-3">© 2026. Todos os direitos reservados.</span>

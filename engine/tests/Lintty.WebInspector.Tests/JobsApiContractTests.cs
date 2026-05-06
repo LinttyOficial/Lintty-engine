@@ -13,12 +13,15 @@ namespace Lintty.WebInspector.Tests;
 /// The worker is disabled in the factory so jobs stay in <c>queued</c> long
 /// enough for assertions. Network is replaced by <see cref="Fakes.FakeGitHubMetadataClient"/>.
 /// </summary>
-public sealed class JobsApiContractTests
+public sealed class JobsApiContractTests : WebInspectorTestBase
 {
+    public JobsApiContractTests(PostgresFixture pg) : base(pg) { }
+
     [Fact]
     public async Task Post_Jobs_With_Bad_Host_Returns_400()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
         var resp = await client.PostAsJsonAsync("/api/jobs", new
@@ -34,7 +37,8 @@ public sealed class JobsApiContractTests
     [Fact]
     public async Task Post_Jobs_With_Empty_Body_Returns_400()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
         var resp = await client.PostAsJsonAsync<object?>("/api/jobs", null);
@@ -44,7 +48,8 @@ public sealed class JobsApiContractTests
     [Fact]
     public async Task Post_Jobs_Happy_Path_Returns_202_With_Valid_Ulid()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
         var resp = await client.PostAsJsonAsync("/api/jobs", new
@@ -64,7 +69,8 @@ public sealed class JobsApiContractTests
     [Fact]
     public async Task Post_Jobs_With_404_From_Github_Returns_400()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         factory.FakeGitHub.Exists = false;
         var client = factory.CreateClient();
 
@@ -78,7 +84,8 @@ public sealed class JobsApiContractTests
     [Fact]
     public async Task Post_Jobs_With_Oversize_Repo_Returns_400()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         // 600 MB > 500 MB cap.
         factory.FakeGitHub.SizeKilobytes = 600L * 1024L;
         var client = factory.CreateClient();
@@ -95,7 +102,8 @@ public sealed class JobsApiContractTests
     [Fact]
     public async Task Get_Job_With_Unknown_Id_Returns_404()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
         var resp = await client.GetAsync("/api/jobs/01HKRZQ8M3X9ABCDEFGHJKMNPQ");
@@ -105,7 +113,8 @@ public sealed class JobsApiContractTests
     [Fact]
     public async Task Get_Job_With_Malformed_Id_Returns_404()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
         var resp = await client.GetAsync("/api/jobs/not-a-ulid");
@@ -115,7 +124,8 @@ public sealed class JobsApiContractTests
     [Fact]
     public async Task Rate_Limit_Triggers_429_On_Fourth_Post_From_Same_Ip()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
         // Default cap is 3 per IP per day. The 4th must be rejected.

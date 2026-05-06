@@ -90,3 +90,14 @@ signing-subkey*
 
 # === GitHub Actions local artifacts ===
 .github/local-*
+
+# === Web Inspector runtime job outputs (per-job ULID dirs, SQLite leftovers) ===
+engine/src/Lintty.WebInspector/var/lintty/jobs/
+engine/src/Lintty.WebInspector/var/lintty/*.sqlite
+engine/src/Lintty.WebInspector/var/lintty/*.sqlite-shm
+engine/src/Lintty.WebInspector/var/lintty/*.sqlite-wal
+
+# === Frontend (Next.js) ===
+frontend/node_modules/
+frontend/.next/
+frontend/out/

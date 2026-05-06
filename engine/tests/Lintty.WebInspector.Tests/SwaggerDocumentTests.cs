@@ -17,14 +17,17 @@ namespace Lintty.WebInspector.Tests;
 /// already covered by the contract tests; this is just a guard against
 /// accidentally breaking the Swashbuckle wiring or renaming the doc.
 /// </summary>
-public sealed class SwaggerDocumentTests
+public sealed class SwaggerDocumentTests : WebInspectorTestBase
 {
     private const string SwaggerJsonPath = "/swagger/v0/swagger.json";
+
+    public SwaggerDocumentTests(PostgresFixture pg) : base(pg) { }
 
     [Fact]
     public async Task Swagger_Json_Has_Expected_Info_Title_And_Version()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
         var response = await client.GetAsync(SwaggerJsonPath);
@@ -43,7 +46,8 @@ public sealed class SwaggerDocumentTests
     [Fact]
     public async Task Swagger_Json_Lists_All_Documented_Paths()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
         var response = await client.GetAsync(SwaggerJsonPath);

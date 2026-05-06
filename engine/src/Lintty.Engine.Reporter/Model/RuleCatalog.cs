@@ -82,8 +82,9 @@ internal static class RuleCatalog
                 WhyItMatters:
                     "Existe um método grande demais para ser entendido em um sentido só de leitura. Mudanças nele acumulam risco, code review trava, e bugs sutis se escondem porque ninguém consegue carregar o método inteiro na cabeça ao mesmo tempo.",
                 ArchitecturalReasoning:
-                    "O slice semântico do método ultrapassa o budget cognitivo de análise (8K tokens), o que é proxy estrutural para violação severa de Single Responsibility Principle. " +
-                    "Métodos nesse tamanho normalmente concentram múltiplas responsabilidades de um Aggregate ou de Application, e a refatoração em métodos menores ou em Domain Services dedicados precede qualquer outra correção arquitetural."),
+                    "O método excede o teto de 60 linhas executáveis adotado pelo Canon como proxy estrutural para violação severa de Single Responsibility Principle. " +
+                    "Métodos nesse tamanho normalmente concentram múltiplas responsabilidades — validação, persistência, regra de negócio e formatação — que pertencem a Domain Services dedicados ou a métodos privados extraídos. " +
+                    "A refatoração em unidades menores precede qualquer outra correção arquitetural, porque métodos longos escondem bugs de invariante e impedem code review honesto."),
         };
 
     /// <summary>

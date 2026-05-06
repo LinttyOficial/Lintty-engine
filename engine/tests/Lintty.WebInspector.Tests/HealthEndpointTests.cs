@@ -10,12 +10,15 @@ namespace Lintty.WebInspector.Tests;
 /// Liveness probe — useful for the eventual deploy (Cloud Run / VM) and as a
 /// smoke test that the host actually boots with our DI graph intact.
 /// </summary>
-public sealed class HealthEndpointTests
+public sealed class HealthEndpointTests : WebInspectorTestBase
 {
+    public HealthEndpointTests(PostgresFixture pg) : base(pg) { }
+
     [Fact]
     public async Task Healthz_Returns_Ok_With_Status_Ok()
     {
-        await using var factory = new WebInspectorFactory();
+        await ResetAsync();
+        await using var factory = CreateFactory();
         var client = factory.CreateClient();
 
         var response = await client.GetAsync("/healthz");

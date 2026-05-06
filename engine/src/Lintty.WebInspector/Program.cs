@@ -8,6 +8,7 @@ using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Rewrite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -281,6 +282,16 @@ public class Program
         var landingRoot = ResolveLandingRoot(app);
         if (landingRoot is not null)
         {
+            // Next.js with trailingSlash:true emits routes as folders containing
+            // index.html (out/inspect/index.html, out/login/index.html, ...).
+            // Visiting /inspect (no trailing slash) would 404 because the static
+            // files middleware doesn't redirect for directories. Rewrite any
+            // extension-less path to its trailing-slash form so the browser
+            // request lands on the directory, then UseDefaultFiles serves index.html.
+            var rewriteOptions = new RewriteOptions()
+                .AddRedirect(@"^(?!api/|swagger)(?!.*\.).+(?<!/)$", "$0/", statusCode: 301);
+            app.UseRewriter(rewriteOptions);
+
             var fileProvider = new PhysicalFileProvider(landingRoot);
             app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
             app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
@@ -307,14 +318,14 @@ public class Program
             return Directory.Exists(configured) ? Path.GetFullPath(configured) : null;
         }
 
-        // Default monorepo layout: engine/src/Lintty.WebInspector/ → ../../../../frontend/out.
+        // Default monorepo layout: engine/src/Lintty.WebInspector/ → ../../../frontend/out.
         // The frontend is now a Next.js static export under frontend/out (see frontend/README.md).
         // Run `npm run build` in /frontend before booting the host if you want the SPA served
         // same-origin at http://localhost:5180/. In production, the frontend is deployed
         // separately to Cloudflare Pages and this folder may not exist — the middleware
         // simply no-ops when the path is missing.
         var candidate = Path.GetFullPath(
-            Path.Combine(app.Environment.ContentRootPath, "..", "..", "..", "..", "frontend", "out"));
+            Path.Combine(app.Environment.ContentRootPath, "..", "..", "..", "frontend", "out"));
         return Directory.Exists(candidate) ? candidate : null;
     }
 

@@ -11,10 +11,17 @@ namespace Lintty.Engine.Core.Tagging;
 /// using lintty.yml explicit_map (precedence) then convention_map. Symbols are
 /// classified via their containing assembly name lookup against the same map.
 ///
-/// FAIL-FAST policy: in convention mode, a project that matches no pattern
-/// AND has no explicit override is classified as Unknown. The orchestrator
-/// can choose to abort. For Sprint 0 fixtures we never fall through — every
-/// fixture project name matches a default pattern.
+/// PERMISSIVE policy (2026-05-06 Web Inspector UX fix): a project that matches
+/// no pattern AND has no explicit override is classified as <see cref="Layer.Unknown"/>.
+/// The engine no longer aborts the analysis — instead, layer-aware rules
+/// (LNTY-001 Domain Layer Isolation, LNTY-008 Ports at Boundaries) skip Unknown
+/// projects, while layer-agnostic rules (LNTY-007 Dependency Cycles, LNTY-009
+/// Method Size) still run on them. The laudo's layer summary surfaces the
+/// "Unknown" row with a call-to-action so the user knows what is missing.
+/// Rationale: prospects on the public Web Inspector typically don't ship a
+/// <c>lintty.yml</c>; demanding one upfront is hostile to the default flow.
+/// Strict mode (fail-fast) lives only as the still-present
+/// <see cref="LayerTaggingError"/> exception type, available for future opt-in.
 /// </summary>
 public sealed class LayerTagger
 {

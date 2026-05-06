@@ -71,6 +71,10 @@ internal static class ExceptionsSummary
 
     private static void Cell(TableDescriptor table, string text, bool mono = false, string? color = null)
     {
+        // Exception file paths can be deep and justifications can be long
+        // single tokens. The 2024.3+ layout engine wraps mid-token within the
+        // declared column width, which keeps the table from triggering
+        // "conflicting size constraints" on pathological inputs.
         table.Cell().BorderBottom(0.4f).BorderColor(LinttyColors.LineFaint).PaddingVertical(4).PaddingRight(6)
             .Text(text)
             .FontFamily(mono ? EmbeddedFonts.Mono : EmbeddedFonts.Sans).FontSize(8.5f)
