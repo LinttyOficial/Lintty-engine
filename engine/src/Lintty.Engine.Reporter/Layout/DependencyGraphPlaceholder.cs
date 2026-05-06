@@ -16,12 +16,17 @@ namespace Lintty.Engine.Reporter.Layout;
 internal static class DependencyGraphPlaceholder
 {
     // Canonical iteration order — never depend on Dictionary key order.
+    // "Unknown" comes last so it doesn't visually compete with the four
+    // canonical Hexagonal/DDD layers; it's only emitted when the engine
+    // detected at least one Layer.Unknown project (permissive layer-tagging,
+    // 2026-05-06). The CTA above explains what to do about it.
     private static readonly IReadOnlyList<string> LayerOrder = new[]
     {
         "Domain",
         "Application",
         "Infrastructure",
         "Presentation",
+        "Unknown",
     };
 
     public static void Compose(IContainer container, ReportView report)
@@ -30,6 +35,7 @@ internal static class DependencyGraphPlaceholder
         {
             RenderHeader(col);
             RenderLayerTable(col, report);
+            RenderUnknownCallout(col, report);
             RenderHardLockCallout(col, report);
             RenderFooter(col);
         });
@@ -89,6 +95,33 @@ internal static class DependencyGraphPlaceholder
         Cell(table, TextHelpers.Number(entry.Files), mono: true);
         Cell(table, TextHelpers.Number(entry.Violations), mono: true,
             color: entry.Violations > 0 ? LinttyColors.HardLockRed : LinttyColors.TextPrimary);
+    }
+
+    /// <summary>
+    /// Permissive layer-tagging callout (2026-05-06). When the engine emits an
+    /// "Unknown" bucket — i.e. the scanned solution contains projects that
+    /// matched neither convention_map nor explicit_map — surface a CTA so the
+    /// reader can fix the laudo by adding a <c>lintty.yml</c> with
+    /// <c>explicit_map</c>. Layer-aware rules (LNTY-001, LNTY-008) skip
+    /// Unknown projects; layer-agnostic rules (LNTY-007, LNTY-009) still run
+    /// on them, so the laudo is still useful even without classification.
+    /// </summary>
+    private static void RenderUnknownCallout(ColumnDescriptor col, ReportView report)
+    {
+        if (!report.LayerSummary.TryGetValue("Unknown", out var unknown)) return;
+        if (unknown.Projects == 0) return;
+
+        var n = unknown.Projects;
+        var projetos = n == 1 ? "projeto sem classificação" : "projetos sem classificação";
+        var msg = $"{n} {projetos}. Adicione um lintty.yml na raiz com explicit_map para "
+                + "incluí-los nas regras de camada (LNTY-001 Domain Layer Isolation, "
+                + "LNTY-008 Ports at Boundaries). Regras de método e ciclos (LNTY-007, "
+                + "LNTY-009) já cobrem esses projetos normalmente.";
+
+        col.Item().PaddingTop(10).Background("#FFFBEB").Border(0.5f).BorderColor(LinttyColors.WarnAmber)
+            .Padding(8).Text(msg)
+            .FontFamily(EmbeddedFonts.Sans).FontSize(8.5f)
+            .FontColor(LinttyColors.WarnAmber).LineHeight(1.4f);
     }
 
     private static void RenderHardLockCallout(ColumnDescriptor col, ReportView report)
