@@ -307,9 +307,14 @@ public class Program
             return Directory.Exists(configured) ? Path.GetFullPath(configured) : null;
         }
 
-        // Default monorepo layout: engine/src/Lintty.WebInspector/ → ../../../landing.
+        // Default monorepo layout: engine/src/Lintty.WebInspector/ → ../../../../frontend/out.
+        // The frontend is now a Next.js static export under frontend/out (see frontend/README.md).
+        // Run `npm run build` in /frontend before booting the host if you want the SPA served
+        // same-origin at http://localhost:5180/. In production, the frontend is deployed
+        // separately to Cloudflare Pages and this folder may not exist — the middleware
+        // simply no-ops when the path is missing.
         var candidate = Path.GetFullPath(
-            Path.Combine(app.Environment.ContentRootPath, "..", "..", "..", "landing"));
+            Path.Combine(app.Environment.ContentRootPath, "..", "..", "..", "..", "frontend", "out"));
         return Directory.Exists(candidate) ? candidate : null;
     }
 

@@ -24,7 +24,9 @@ dotnet run --project src/Lintty.Engine.Cli -- analyze \
 
 The Web Inspector backing store moved from SQLite to Postgres in Sprint 1 of
 the V1+ Dashboard work. To run the host locally you need a Postgres reachable
-on `localhost:5432`. The repo ships a one-shot dev stack:
+on `localhost:5433`. (Host port 5433, not 5432, avoids conflict with a
+native Postgres install on Windows. The container internally still listens
+on 5432 — only the host mapping moved.) The repo ships a one-shot dev stack:
 
 ```bash
 # from the repo root:
@@ -38,7 +40,7 @@ Default credentials (matching `src/Lintty.WebInspector/appsettings.json`):
 
 ```text
 Host=localhost
-Port=5432
+Port=5433
 Database=lintty_dev
 Username=lintty
 Password=lintty_dev
@@ -56,8 +58,26 @@ Then run the Web Inspector:
 dotnet run --project src/Lintty.WebInspector
 # - http://localhost:5180/healthz
 # - http://localhost:5180/swagger
-# - http://localhost:5180/inspect.html  (when landing/ is reachable)
+# - http://localhost:5180/inspect/  (when frontend/out/ is reachable)
 ```
+
+### Serving the frontend same-origin in dev
+
+The Web Inspector statically serves whatever's in `frontend/out/` at the
+root path so you can open `http://localhost:5180/inspect/` without CORS.
+Build the frontend at least once before booting the host:
+
+```bash
+# from repo root, one-time
+cd frontend && npm install && npm run build
+
+# back to engine/, run the host
+dotnet run --project src/Lintty.WebInspector
+```
+
+For frontend hot reload, run `npm run dev` (port 3000) in a second
+terminal — the dev server's `lib/api.ts` auto-detects localhost and points
+fetches at `:5180`. See `frontend/README.md` for more.
 
 ## Schema management (ADR 0007 Sprint 2)
 
@@ -81,7 +101,7 @@ the EF tooling manually before booting the app:
 
 ```bash
 # from engine/
-export LINTTY_POSTGRES__CONNECTIONSTRING="Host=...;Port=5432;Database=...;Username=...;Password=..."
+export LINTTY_POSTGRES__CONNECTIONSTRING="Host=...;Port=5433;Database=...;Username=...;Password=..."
 dotnet ef database update --project src/Lintty.WebInspector
 ```
 

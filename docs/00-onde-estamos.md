@@ -16,9 +16,10 @@ Lintty é um **árbitro técnico de arquitetura .NET**. O cliente entrega um `.s
 | CLI standalone | ✅ Funcionando | `engine/src/Lintty.Engine.Cli` |
 | Reporter PDF (QuestPDF, determinístico) | ✅ Funcionando | `engine/src/Lintty.Engine.Reporter` |
 | Fixtures Saint / Sinner / Ninja-01 | ✅ Validados | `fixtures/the-*` |
-| Landing page estática | ✅ Pronta (falta deploy) | `landing/` |
+| Landing + dashboard (Next.js, static export) | ✅ Migrado de `landing/*.html` para `frontend/` (Next 15 + TS + Tailwind 3) | `frontend/` |
 | Web Inspector — backend (API + worker) | ✅ Esqueleto pronto, 26/26 testes verdes (gate de determinismo cruzado incluso) | `engine/src/Lintty.WebInspector/` |
-| Web Inspector — frontend `/inspect`, deploy, Dockerfile, PAT-passthrough | ❌ Fora do esqueleto V0, próximos tickets | spec em `13-web-inspector.md` §12 |
+| Web Inspector — frontend `/inspect` (4 estados + polling 2s) | ✅ Implementado em `frontend/app/inspect/`, consome `/api/jobs` | `frontend/app/inspect/` |
+| Deploy Cloudflare Pages, Dockerfile, PAT-passthrough | ❌ Fora do esqueleto V0, próximos tickets | spec em `13-web-inspector.md` §12 |
 | Distribuição oficial do CLI (release binário) | ❌ Não publicada | plano em `14-cli-distribution.md` |
 
 ## Os dois caminhos de uso (V0)

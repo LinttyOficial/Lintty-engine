@@ -17,9 +17,9 @@ Authoritative current scope is **`docs/00-onde-estamos.md`** (TL;DR), then `docs
 
 | Path | What it is | Status |
 |---|---|---|
-| `engine/` | .NET 8 solution `Lintty.Engine.sln` — the Roslyn engine (`Core`), CLI (`Cli`), audit PDF reporter (`Reporter`), and white-label brand PDF template (`Lintty.Docs.Pdf`, CLI `lintty-docs`) plus xUnit tests. **The only shipping code in the V0.** | Active |
+| `engine/` | .NET 8 solution `Lintty.Engine.sln` — Roslyn engine (`Core`), CLI (`Cli`), audit PDF reporter (`Reporter`), white-label brand PDF (`Lintty.Docs.Pdf`, CLI `lintty-docs`), and the **Web Inspector ASP.NET minimal API** (`Lintty.WebInspector`) that wraps the same CLI. xUnit tests for each. **The only shipping code in the V0.** | Active |
 | `fixtures/the-saint/`, `the-sinner/`, `the-ninja-01/` | Demo solutions with `lintty.yml` and `expected.json`. Saint → grade A, Sinner → F + 3 hard locks, Ninja-01 → LNTY-002 via constant-folded SQL. | Active |
-| `landing/` | Static landing page (HTML + Tailwind CDN, no build step). `lintty.com` deploy target is Cloudflare Pages. | Active |
+| `frontend/` | Next.js 15 + TypeScript + Tailwind 3, static-exported to `frontend/out/`. Replaces the legacy `landing/`. Pages: `/` (marketing), `/cli`, `/pricing`, `/privacidade`, `/inspect` (Web Inspector with 4 states + 2s polling), `/login`, `/signup`, `/dashboard`. Build with `cd frontend && npm install && npm run build`. The Web Inspector ASP.NET host serves `frontend/out/` same-origin in dev so fetches against `/api/*` skip CORS. See `frontend/README.md`. | Active |
 | `docs/` | Design/spec docs aligned to V0 (`00-onde-estamos.md`, `01-product-vision.md`, `02-canon-v1.md`, `03-motor-cli.md`, `09`, `11`, `12`, `13-web-inspector.md`, `14-cli-distribution.md`, `15-roadmap-curto.md`). `adr/` holds active ADRs. `sales/`, `compliance/`, `brand/` carry artifacts. Read `docs/README.md` for the index. | Active |
 | `docs/futuro/` | **V1+ blueprint preserved** — full LLM, GCP, multi-tenant, SOC 2, PAdES, hash-chain plans. **Do not use as operational reference.** Don't build from these without explicit "go". | Roadmap |
 | `docs/docs/` | Stale duplicate of `docs/` from earlier copy; **prefer the top-level `docs/`**. Don't write here. | Stale |
@@ -29,7 +29,7 @@ Authoritative current scope is **`docs/00-onde-estamos.md`** (TL;DR), then `docs
 ## Engine commands (run from `engine/`)
 
 ```bash
-dotnet build Lintty.Engine.sln                     # builds all 5 projects
+dotnet build Lintty.Engine.sln                     # builds all projects (Core, Cli, Reporter, Docs.Pdf, WebInspector + tests)
 dotnet test  Lintty.Engine.sln                     # runs all xUnit projects
 dotnet test tests/Lintty.Engine.Reporter.Tests     # one project (e.g. determinism gate only)
 dotnet test --filter "FullyQualifiedName~Sinner"   # one test class
@@ -38,6 +38,10 @@ dotnet test --filter "FullyQualifiedName~Sinner"   # one test class
 dotnet run --project src/Lintty.Engine.Cli -- analyze \
   --solution ../fixtures/the-sinner/Sinner.sln \
   --pdf laudo-sinner.pdf
+
+# Run the Web Inspector locally (ASP.NET minimal API, wraps the same CLI):
+dotnet run --project src/Lintty.WebInspector
+# Jobs persist in src/Lintty.WebInspector/var/lintty/jobs.sqlite (SQLite, WAL mode).
 ```
 
 `global.json` pins SDK `9.0.300` with `rollForward: latestFeature`; the projects target `net8.0` (LTS, deterministic build). Central Package Management is in `engine/Directory.Packages.props` — **do not add `<PackageReference Version="...">`**, declare a `PackageVersion` there and reference it without a version in the csproj.
@@ -56,7 +60,7 @@ dotnet run --project src/Lintty.Engine.Cli -- analyze \
 
 1. `Workspace/SolutionLoader` — `MSBuildLocator` + `MSBuildWorkspace`, captures non-fatal warnings as `WorkspaceDiagnostic`s.
 2. `Tagging/LayerTagger` + `LinttyConfig` (parses `lintty.yml`) — classifies each `.csproj` as Domain/Application/Infrastructure/Presentation/DomainAbstractions. **Fail-fast:** if convention mode can't classify a project and there's no `explicit_map` entry, the scan errors with `LayerTaggingError`. **Never add a guessing fallback.**
-3. `Analyzers/Lnty00*` run in fixed order against the loaded `Compilation`s. Each implements `IAnalyzer.AnalyzeAsync(AnalysisContext) → IReadOnlyList<Violation>`. **Active rules in V0: 001, 002, 003, 006, 007, 008, 009 (7 rules).** LNTY-004/005 require an LLM and are deferred V1+ — don't wire them up. LNTY-001/002/007 are **hard locks** (non-suppressible).
+3. `Analyzers/Lnty00*` run in fixed order against the loaded `Compilation`s. Each implements `IAnalyzer.AnalyzeAsync(AnalysisContext) → IReadOnlyList<Violation>`. **Active rules in V0: 001, 002, 003, 006, 007, 008, 009 (7 rules).** LNTY-004/005 require an LLM and are deferred V1+ — don't wire them up (see `docs/02-canon-v1.md`). LNTY-001/002/007 are **hard locks** (non-suppressible).
 4. `Suppressions/LinttyIgnoreParser` — extracts `// @lintty-ignore: LNTY-XXX reason="..."` comments, validates (≥30 chars, rule exists, not a hard lock).
 5. `Scoring/Scorer` — Canon formula (weights C=25/H=10/M=4/L=1, score rounded to nearest 5, clamped 0–100); any open Critical or suppression cap >10% of Med/High forces grade `F` and `seal_eligible=false`.
 6. `Output/JsonReport` + `ReportSchema` — serializes the `ReportDto`. Fields are **sorted deterministically** (file, line, column, rule_id, fingerprint); culture is `Invariant`. Schema is locked at `1.0` and documented in ADR 0001 §3 — preserve every field even when unused (`inference_signature: null`, `ai_candidates: []`, etc.).
@@ -68,6 +72,10 @@ dotnet run --project src/Lintty.Engine.Cli -- analyze \
 - Reads the **compact** JSON (Cli passes `indented: false` so the hash is independent of pretty-print whitespace).
 - Embedded fonts via `Theming/EmbeddedFonts` (Inter + JetBrains Mono in `Resources/`). **No system font fallback** — fail loudly if a TTF is missing.
 - Footer carries `hash_content = sha256(report_json_utf8)`, **not** `hash_pdf` — option B in ADR 0003 §5.2 to avoid the circular-reference problem. Don't change to `hash_pdf` without re-reading that section.
+
+### Web Inspector (`Lintty.WebInspector`)
+
+ASP.NET minimal API that turns the CLI into a hosted flow: client posts a GitHub URL → backend shallow-clones → invokes the **same `lintty-engine`** binary → returns the laudo PDF → discards the clone (ephemeral, per `docs/13-web-inspector.md`). Job state lives in `var/lintty/jobs.sqlite` (SQLite WAL). **Cross-determinism gate:** the PDF produced by the Web Inspector must be byte-identical to one produced by the CLI on the same input — this is the QA invariant in `.claude/agents/qa-engineer.md`. Don't introduce timestamps, request IDs, host metadata, or anything else into the report path that isn't already in the CLI's output.
 
 ### White-label brand PDFs (`Lintty.Docs.Pdf`)
 
@@ -85,14 +93,14 @@ Separate from the audit Reporter. Used for institutional documents (ADRs, briefi
 
 Use the right one rather than doing everything in the main thread:
 
-- `backend-dev-dotnet` — engine/Roslyn/analyzer work, anything `.cs` in `engine/`.
-- `qa-engineer` — fixtures, golden suite, calibration, false-positive hunting.
+- `backend-dev-dotnet` — engine/Roslyn/analyzer work and the Web Inspector ASP.NET host. Anything `.cs` in `engine/`.
+- `qa-engineer` — fixtures, golden suite, calibration, false-positive hunting, **cross-determinism gate (CLI vs Web Inspector PDFs)**.
 - `software-architect` — design decisions, ADRs, contract changes between components.
 - `product-owner` — scope/MVP/Tier-1-vs-Tier-2 calls.
 - `tech-writer-sales` — `docs/sales/`, deck, talk-track, landing copy, laudo PDF copy.
 - `frontend-dev` — `landing/` and any future dashboard mockups.
 - `security-compliance` — `docs/compliance/`, DPA, LGPD, signing roadmap.
-- `ai-llm-engineer`, `backend-dev-cloud` — exist for V1+; **don't invoke for V0 work** (no LLM, no full GCP). The Web Inspector backend is small enough to build with `backend-dev-dotnet` (it's an ASP.NET minimal API wrapping the existing CLI).
+- `ai-llm-engineer`, `backend-dev-cloud` — V1+ only; **don't invoke for V0 work** (no LLM, no full GCP).
 
 ## Things to leave alone unless explicitly asked
 
@@ -109,6 +117,7 @@ Use the right one rather than doing everything in the main thread:
 - `docs/01-product-vision.md` — V0 product model (lean, no LLM/PAdES/SOC 2).
 - `docs/02-canon-v1.md` — the 9 rules, scoring, suppression rules.
 - `docs/03-motor-cli.md` — engine spec for V0 (no Cloud Run / no LLM).
+- `docs/09-golden-tests.md` — golden suite & determinism contract.
 - `docs/12-sales-cut.md` — sales angle and demo script.
 - `docs/13-web-inspector.md` — spec for the GitHub-URL → PDF flow.
 - `docs/14-cli-distribution.md` — CLI release pipeline and download UX.
