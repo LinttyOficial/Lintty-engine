@@ -19,6 +19,8 @@ internal sealed record ReportView(
     IReadOnlyList<string> HardLocksHit,
     IReadOnlyDictionary<string, LayerSummaryView> LayerSummary,
     IReadOnlyList<ViolationView> Violations,
+    IReadOnlyList<ViolationView> ActiveViolations,
+    IReadOnlyList<SuppressedViolationView> SuppressedViolations,
     IReadOnlyList<ExceptionView> Exceptions,
     IReadOnlyList<WorkspaceDiagnosticView> WorkspaceDiagnostics,
     string CompileStatus,
@@ -50,6 +52,20 @@ internal sealed record ExceptionView(
     string? AuthorGitEmail,
     bool Valid,
     string? InvalidReason);
+
+/// <summary>
+/// A violation that the engine detected but a valid <c>@lintty-ignore</c>
+/// directive on (or just above) the offending line suppressed. The reporter
+/// renders these in a dedicated section, separate from active violations,
+/// with the suppression justification highlighted as the primary readable.
+/// Hard-lock violations are NEVER projected here — canon-mandated locks stay
+/// in the active list regardless of any directive.
+/// </summary>
+internal sealed record SuppressedViolationView(
+    ViolationView Violation,
+    string Justification,
+    string? AuthorGitEmail,
+    int SuppressionLine);
 
 internal sealed record WorkspaceDiagnosticView(
     string Kind,

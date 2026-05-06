@@ -90,7 +90,14 @@ internal sealed class LinttyDocument : IDocument
                 .FontColor(LinttyColors.TextPrimary));
 
             page.Header().Element(c => PageHeader.Compose(c, _report));
-            page.Content().PaddingTop(12).Element(c => ViolationsList.Compose(c, _report));
+            // Active violations come first (the verdict surface). Suppressed
+            // ones follow in their own section so a reader doesn't conflate
+            // "exception accepted with justification" with "open violation".
+            page.Content().PaddingTop(12).Column(col =>
+            {
+                col.Item().Element(c => ViolationsList.Compose(c, _report));
+                col.Item().PaddingTop(20).Element(c => SuppressedViolationsList.Compose(c, _report));
+            });
             page.Footer().Element(c => TechnicalFooter.Compose(c, _report, _hashContent));
         });
     }

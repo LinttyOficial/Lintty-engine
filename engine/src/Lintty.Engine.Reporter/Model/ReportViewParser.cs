@@ -27,6 +27,8 @@ internal static class ReportViewParser
         var diagnostics = ParseDiagnosticsArray(root);
         var metrics = ParseMetrics(root);
 
+        var (activeViolations, suppressedViolations) = SplitBySuppression(violationsList, exceptionsList);
+
         return new ReportView(
             SchemaVersion: Str(root, "schema_version", "1.0"),
             RunId: Str(root, "run_id"),
@@ -39,10 +41,75 @@ internal static class ReportViewParser
             HardLocksHit: hardLocks,
             LayerSummary: layerSummary,
             Violations: violationsList,
+            ActiveViolations: activeViolations,
+            SuppressedViolations: suppressedViolations,
             Exceptions: exceptionsList,
             WorkspaceDiagnostics: diagnostics,
             CompileStatus: Str(root, "compile_status", "success"),
             Metrics: metrics);
+    }
+
+    /// <summary>
+    /// Mirrors <c>Scorer.Compute</c>'s suppression window: a valid
+    /// <c>@lintty-ignore</c> on line L applies to the directive line and the
+    /// next 5 lines (covers the next member declaration). Hard locks are
+    /// canon-mandated and never suppressible — they stay active even when a
+    /// matching directive exists. Tuple is returned in stable order: the
+    /// <c>violations[]</c> array is already sorted (file, line, column,
+    /// rule_id) by the engine, so iterating in-place preserves determinism
+    /// of the rendered PDF.
+    /// </summary>
+    private static (List<ViolationView> Active, List<SuppressedViolationView> Suppressed)
+        SplitBySuppression(
+            IReadOnlyList<ViolationView> violations,
+            IReadOnlyList<ExceptionView> exceptions)
+    {
+        // Index valid suppressions by (file, line+offset, ruleId) for the
+        // 5-line window. Path normalization (\ → /) matches Scorer.Compute.
+        var suppressionIndex = new Dictionary<(string file, int line, string rule), ExceptionView>();
+        foreach (var ex in exceptions)
+        {
+            if (!ex.Valid) continue;
+            var normalizedFile = ex.File.Replace('\\', '/');
+            for (var offset = 0; offset <= 5; offset++)
+            {
+                var key = (normalizedFile, ex.Line + offset, ex.RuleId);
+                // First-write-wins: if two suppressions overlap on a key, the
+                // earlier one is kept. Engine output is deterministically
+                // sorted, so this is stable.
+                if (!suppressionIndex.ContainsKey(key))
+                    suppressionIndex[key] = ex;
+            }
+        }
+
+        var active = new List<ViolationView>(violations.Count);
+        var suppressed = new List<SuppressedViolationView>();
+
+        foreach (var v in violations)
+        {
+            if (v.IsHardLock)
+            {
+                // Canon: hard locks are never suppressible. Always active.
+                active.Add(v);
+                continue;
+            }
+
+            var key = (v.File.Replace('\\', '/'), v.Line, v.RuleId);
+            if (suppressionIndex.TryGetValue(key, out var match))
+            {
+                suppressed.Add(new SuppressedViolationView(
+                    Violation: v,
+                    Justification: match.Justification,
+                    AuthorGitEmail: match.AuthorGitEmail,
+                    SuppressionLine: match.Line));
+            }
+            else
+            {
+                active.Add(v);
+            }
+        }
+
+        return (active, suppressed);
     }
 
     private static string Str(JsonElement el, string name, string fallback = "")

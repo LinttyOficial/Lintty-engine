@@ -57,15 +57,20 @@ internal static class ExecutiveSummary
 
     internal static string BuildParagraph(ReportView r)
     {
-        var totalProjects = 0;
+        // Defense-in-depth: read project count from r.Metrics.ProjectsAnalyzed
+        // (the source of truth populated from the workspace loader, before any
+        // layer classification) rather than summing LayerSummary.Values, which
+        // would silently undercount if a project ever fell through to Unknown.
+        // Since the engine now fails-fast on Layer.Unknown (LayerTaggingError),
+        // both numbers should always agree — but if a future regression breaks
+        // the layer summary, the executive summary keeps telling the truth.
+        var totalProjects = r.Metrics.ProjectsAnalyzed;
         var totalFiles = 0;
         foreach (var entry in r.LayerSummary.Values)
-        {
-            totalProjects += entry.Projects;
             totalFiles += entry.Files;
-        }
         var loc = r.Metrics.TotalSlocPhysical;
-        var v = r.Violations.Count;
+        var active = r.ActiveViolations.Count;
+        var suppressed = r.SuppressedViolations.Count;
         var hardLocks = r.HardLocksHit.Count;
 
         var sb = new StringBuilder();
@@ -77,7 +82,8 @@ internal static class ExecutiveSummary
         sb.Append(totalFiles.ToString(CultureInfo.InvariantCulture)).Append(' ').Append(totalFiles == 1 ? "arquivo" : "arquivos");
         sb.Append(", ");
         sb.Append(loc.ToString(CultureInfo.InvariantCulture)).Append(" LoC). ");
-        sb.Append(v.ToString(CultureInfo.InvariantCulture)).Append(v == 1 ? " violação detectada, " : " violações detectadas, ");
+        sb.Append(active.ToString(CultureInfo.InvariantCulture)).Append(active == 1 ? " violação ativa, " : " violações ativas, ");
+        sb.Append(suppressed.ToString(CultureInfo.InvariantCulture)).Append(suppressed == 1 ? " suprimida com justificativa, " : " suprimidas com justificativa, ");
         sb.Append(hardLocks.ToString(CultureInfo.InvariantCulture)).Append(hardLocks == 1 ? " hard lock atingido. " : " hard locks atingidos. ");
         sb.Append("Selo arquitetural ");
         sb.Append(r.SealEligible ? "emitido" : "NÃO emitido");

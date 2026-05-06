@@ -23,15 +23,22 @@ internal static class ViolationsList
 
             col.Item().PaddingTop(2).LineHorizontal(0.6f).LineColor(LinttyColors.LineFaint);
 
-            if (report.Violations.Count == 0)
+            // Active = violations[] minus those matched by a valid
+            // @lintty-ignore directive on the same (file, line, rule_id),
+            // with hard locks always kept active (canon-mandated, not
+            // suppressible). Suppressed violations are listed separately in
+            // SuppressedViolationsList — keeping them out of this section
+            // avoids the "3 violations" optical scare when all are exceptions
+            // already reviewed and accepted.
+            if (report.ActiveViolations.Count == 0)
             {
-                col.Item().PaddingTop(10).Text("Nenhuma violação detectada nesta análise.")
+                col.Item().PaddingTop(10).Text("Nenhuma violação ativa nesta análise.")
                     .FontFamily(EmbeddedFonts.Sans).FontSize(10)
                     .FontColor(LinttyColors.TextSecondary);
                 return;
             }
 
-            foreach (var v in report.Violations)
+            foreach (var v in report.ActiveViolations)
             {
                 col.Item().PaddingTop(14).Element(c => RenderViolation(c, v));
             }
