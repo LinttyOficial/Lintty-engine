@@ -4,7 +4,6 @@ using System.IO;
 using System.Threading.Tasks;
 using Lintty.Engine.Core;
 using Lintty.Engine.Core.Output;
-using Lintty.Engine.Core.Tagging;
 using Lintty.Engine.Core.Workspace;
 using Lintty.Engine.Reporter;
 
@@ -226,14 +225,10 @@ internal static class Commands
             Console.Error.WriteLine(ex.Message);
             return 2;
         }
-        catch (LayerTaggingError ex)
-        {
-            // Friendly fail-fast: the message itself teaches the user how
-            // to fix their lintty.yml. No stack trace — that would bury
-            // the actionable text in noise. Exit 2 = execution error.
-            Console.Error.WriteLine("ERR " + ex.Message);
-            return 2;
-        }
+        // Note (2026-05-06): the engine no longer throws LayerTaggingError
+        // by default — unclassified projects are tagged Layer.Unknown and
+        // surfaced in the layer summary with a CTA. The exception type is
+        // preserved as opt-in for a future strict mode.
         catch (Exception ex)
         {
             Console.Error.WriteLine("Engine error: " + ex.Message);

@@ -33,6 +33,8 @@ public sealed class Lnty008_PortsAtBoundaries : IAnalyzer
         foreach (var (project, compilation) in context.Projects)
         {
             var layer = context.LayerByProject[project.Name];
+            // Layer.Unknown (permissive tagging, 2026-05-06) is naturally
+            // skipped here — we only flag adapters in Infrastructure projects.
             if (layer != Layer.Infrastructure) continue;
 
             foreach (var tree in compilation.SyntaxTrees)

@@ -57,6 +57,9 @@ public sealed class Lnty001_DomainLayerIsolation : IAnalyzer
         return results;
     }
 
+    // Only Layer.Domain triggers this rule. Layer.Unknown (permissive
+    // tagging, 2026-05-06) is intentionally NOT matched: layer-aware hard
+    // locks must not fire on projects whose layer was never determined.
     private static bool IsDomainProject(AnalysisContext context, Project project)
         => context.LayerByProject[project.Name] == Layer.Domain;
 

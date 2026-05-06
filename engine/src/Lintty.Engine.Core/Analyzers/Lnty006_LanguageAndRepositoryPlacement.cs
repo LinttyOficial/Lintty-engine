@@ -50,8 +50,16 @@ public sealed class Lnty006_LanguageAndRepositoryPlacement : IAnalyzer
                 if (layer == Layer.Domain)
                     DetectLanguageLeak(context, tree, root, model, results);
 
-                if (layer != Layer.Domain && layer != Layer.DomainAbstractions)
+                // Skip Unknown: we cannot say "this isn't Domain" with confidence
+                // when the project's layer was never determined. Permissive
+                // layer-tagging (2026-05-06) routes those projects through
+                // layer-agnostic rules only.
+                if (layer != Layer.Domain
+                    && layer != Layer.DomainAbstractions
+                    && layer != Layer.Unknown)
+                {
                     DetectRepositoryContractMisplacement(context, tree, root, model, results);
+                }
             }
         }
 

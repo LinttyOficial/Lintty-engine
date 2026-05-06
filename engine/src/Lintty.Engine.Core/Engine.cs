@@ -53,7 +53,7 @@ public sealed class LinttyEngine
         var (reportingPath, reportingDir, config, canonVersion) = ResolveReportingAndConfig(target, canonVersionOverride);
 
         var loaded = await LoadAndTag(target, config).ConfigureAwait(false);
-        var layerByProject = ClassifyLayersOrThrow(loaded, new LayerTagger(config));
+        var layerByProject = ClassifyLayersPermissive(loaded, new LayerTagger(config));
 
         var context = new AnalysisContext
         {
@@ -130,27 +130,26 @@ public sealed class LinttyEngine
     }
 
     /// <summary>
-    /// Canon §"Fail-fast": every loaded project must classify into one of the
-    /// five Canon layers. An unclassified project means convention_map didn't
-    /// match AND there's no explicit_map override — we refuse to produce a
-    /// laudo we can't stand behind.
+    /// Permissive classification (2026-05-06 Web Inspector UX fix). Every loaded
+    /// project gets a layer; projects that match neither convention_map nor
+    /// explicit_map are tagged <see cref="Layer.Unknown"/> and surfaced in the
+    /// layer summary with a CTA, not aborted. Layer-aware analyzers (LNTY-001,
+    /// LNTY-008, the language/repository-placement halves of LNTY-006) skip
+    /// Unknown projects; layer-agnostic analyzers (LNTY-007 cycles, LNTY-009
+    /// method size) still run on them.
+    ///
+    /// Rationale: prospects on the public Web Inspector typically don't ship a
+    /// <c>lintty.yml</c>, and demanding one upfront is hostile to the default
+    /// flow. The strict <see cref="LayerTaggingError"/> exception remains
+    /// available as a future opt-in (e.g. CI fail-fast mode).
     /// </summary>
-    private static Dictionary<string, Layer> ClassifyLayersOrThrow(
+    private static Dictionary<string, Layer> ClassifyLayersPermissive(
         SolutionLoader.LoadResult loaded,
         LayerTagger tagger)
     {
         var layerByProject = new Dictionary<string, Layer>(StringComparer.Ordinal);
         foreach (var (project, _) in loaded.Projects)
             layerByProject[project.Name] = tagger.Classify(project.Name, project.FilePath);
-
-        var unclassified = layerByProject
-            .Where(kv => kv.Value == Layer.Unknown)
-            .Select(kv => kv.Key)
-            .OrderBy(n => n, StringComparer.Ordinal)
-            .ToList();
-        if (unclassified.Count > 0)
-            throw new LayerTaggingError(unclassified);
-
         return layerByProject;
     }
 
@@ -254,6 +253,14 @@ public sealed class LinttyEngine
     /// preserved to keep <c>hash_content</c> stable; the final SortedDictionary
     /// always emits Domain/Application/Infrastructure/Presentation in ordinal
     /// order (display-cased).
+    ///
+    /// Permissive layer-tagging (2026-05-06): the "unknown" bucket is
+    /// emitted ONLY when at least one loaded project actually classified to
+    /// <see cref="Layer.Unknown"/>. This keeps the existing fixtures
+    /// (Saint/Sinner/Ninja-01) byte-identical because all of their projects
+    /// classify cleanly via convention; Foreigner-style scans (no
+    /// <c>lintty.yml</c>, names not matching convention) get an extra
+    /// "Unknown" row that surfaces the CTA in the laudo.
     /// </summary>
     private static SortedDictionary<string, LayerSummaryDto> BuildLayerSummary(
         IReadOnlyList<(Project Project, Compilation Compilation)> projects,
@@ -264,6 +271,17 @@ public sealed class LinttyEngine
         var layerCounts = new Dictionary<string, (int projects, int files, int violations)>(StringComparer.Ordinal);
         foreach (var layer in new[] { "domain", "application", "infrastructure", "presentation" })
             layerCounts[layer] = (0, 0, 0);
+
+        // Detect Unknown projects up-front so we only emit the row when needed.
+        // Schema 1.0 stays locked: existing fixtures with all projects
+        // classified see no "Unknown" key at all.
+        var hasUnknown = false;
+        foreach (var kv in layerByProject)
+        {
+            if (kv.Value == Layer.Unknown) { hasUnknown = true; break; }
+        }
+        if (hasUnknown)
+            layerCounts["unknown"] = (0, 0, 0);
 
         foreach (var (project, compilation) in projects)
         {
