@@ -1,0 +1,406 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+ * Global tokens carried over from landing/*.html so the visual
+ * identity stays bit-for-bit identical during the migration.
+ * ============================================================ */
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family:
+    var(--font-inter), Inter, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+}
+
+/* Skip link (a11y) — same UX as the legacy pages */
+.skip {
+  position: absolute;
+  left: -9999px;
+}
+.skip:focus {
+  left: 1rem;
+  top: 1rem;
+  background: #000;
+  color: #fff;
+  padding: 8px 12px;
+  border-radius: 4px;
+  z-index: 50;
+}
+
+:focus-visible {
+  outline: 2px solid #0f4c3a;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Code snippet block used on landing + cli + index */
+pre.snippet {
+  background: #f4f4f3;
+  border: 1px solid #e5e5e3;
+  border-radius: 6px;
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-x: auto;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: #1f1f1f;
+}
+pre.snippet-dark {
+  background: #0a0a0a;
+  color: #fafaf9;
+  border-radius: 6px;
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-x: auto;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+pre.snippet-dark .prompt {
+  color: #9ca3af;
+  user-select: none;
+}
+
+/* Pill-style badges from landing */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 999px;
+}
+.badge-saint {
+  background: #0f4c3a;
+  color: #fff;
+}
+.badge-sinner {
+  background: #7a1f1f;
+  color: #fff;
+}
+.badge-neutral {
+  background: #525252;
+  color: #fff;
+}
+
+.field-error {
+  color: #7a1f1f;
+  font-size: 13px;
+  margin-top: 6px;
+}
+
+/* ===== Inspect: spinner + indeterminate progress + grade badge ===== */
+.lt-spinner {
+  width: 48px;
+  height: 48px;
+  border: 4px solid #e5e5e3;
+  border-top-color: #0f4c3a;
+  border-radius: 50%;
+  animation: lt-spin 0.9s linear infinite;
+}
+@keyframes lt-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.lt-progress {
+  position: relative;
+  height: 4px;
+  width: 100%;
+  background: #e5e5e3;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.lt-progress::after {
+  content: "";
+  position: absolute;
+  left: -40%;
+  top: 0;
+  height: 100%;
+  width: 40%;
+  background: #0f4c3a;
+  border-radius: 2px;
+  animation: lt-bar 1.4s ease-in-out infinite;
+}
+@keyframes lt-bar {
+  0% {
+    left: -40%;
+  }
+  100% {
+    left: 100%;
+  }
+}
+
+.grade-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 16px;
+  font-size: 48px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.grade-A,
+.grade-B {
+  background: #ecf5f0;
+  color: #0f4c3a;
+}
+.grade-C,
+.grade-D {
+  background: #f5f5f4;
+  color: #1f1f1f;
+}
+.grade-F {
+  background: #f8eded;
+  color: #7a1f1f;
+}
+
+/* ===== Signup: password strength bar ===== */
+.pwd-strength {
+  height: 4px;
+  border-radius: 2px;
+  background: #e5e5e3;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.pwd-strength-bar {
+  height: 100%;
+  width: 0%;
+  transition: width 200ms ease, background-color 200ms ease;
+  background: #7a1f1f;
+}
+.pwd-strength-bar.weak {
+  width: 33%;
+  background: #7a1f1f;
+}
+.pwd-strength-bar.medium {
+  width: 66%;
+  background: #b58e1c;
+}
+.pwd-strength-bar.strong {
+  width: 100%;
+  background: #0f4c3a;
+}
+
+/* ===== Login: modal ===== */
+.lt-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 10, 10, 0.55);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 50;
+  padding: 1rem;
+}
+.lt-modal-backdrop.is-open {
+  display: flex;
+}
+.lt-modal {
+  background: #fff;
+  border-radius: 12px;
+  max-width: 28rem;
+  width: 100%;
+  padding: 1.5rem;
+  box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.25);
+}
+
+/* ===== Dashboard: avatar, dropdown, skeleton ===== */
+.lt-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: #0f4c3a;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.lt-dropdown {
+  position: relative;
+}
+.lt-dropdown-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 220px;
+  background: #fff;
+  border: 1px solid #e5e5e3;
+  border-radius: 8px;
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.15);
+  padding: 6px;
+  display: none;
+  z-index: 40;
+}
+.lt-dropdown-menu.is-open {
+  display: block;
+}
+.lt-dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+  color: #1f1f1f;
+  border-radius: 6px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.lt-dropdown-item:hover {
+  background: #f4f4f3;
+}
+.lt-dropdown-divider {
+  height: 1px;
+  background: #e5e5e3;
+  margin: 4px 0;
+}
+
+.lt-skeleton {
+  background: linear-gradient(
+    90deg,
+    #e5e5e3 0%,
+    #efefee 50%,
+    #e5e5e3 100%
+  );
+  background-size: 200% 100%;
+  animation: lt-shimmer 1.4s ease-in-out infinite;
+  border-radius: 4px;
+}
+@keyframes lt-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ===== Pricing: featured tier outline ===== */
+.tier-card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+.tier-card.is-featured {
+  border-color: #0f4c3a;
+  box-shadow:
+    0 0 0 1px #0f4c3a,
+    0 10px 30px -15px rgba(15, 76, 58, 0.25);
+}
+
+/* ===== CLI page: targets table ===== */
+table.targets th,
+table.targets td {
+  padding: 10px 14px;
+  border-bottom: 1px solid #e5e5e3;
+  text-align: left;
+  font-size: 14px;
+}
+table.targets th {
+  font-weight: 600;
+  color: #525252;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+table.targets td.mono {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+
+/* ===== Privacy page (markdown-ish article) ===== */
+.privacy-article table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  font-size: 14px;
+  margin: 1rem 0;
+}
+.privacy-article table th,
+.privacy-article table td {
+  border: 1px solid #e5e5e3;
+  padding: 8px 12px;
+  text-align: left;
+}
+.privacy-article table th {
+  background: #f4f4f3;
+  font-weight: 600;
+}
+.privacy-article h1 {
+  font-size: 2.25rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+  margin-bottom: 1rem;
+}
+.privacy-article h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin-top: 3rem;
+  border-top: 1px solid #e5e5e3;
+  padding-top: 2rem;
+}
+.privacy-article p,
+.privacy-article ul,
+.privacy-article ol {
+  margin: 0.75rem 0;
+  line-height: 1.65;
+}
+.privacy-article ul,
+.privacy-article ol {
+  padding-left: 1.5rem;
+}
+.privacy-article ul {
+  list-style: disc;
+}
+.privacy-article ol {
+  list-style: decimal;
+}
+.privacy-article a {
+  color: #0a0a0a;
+  text-decoration: underline;
+}
+.privacy-article a:hover {
+  opacity: 0.8;
+}
+.privacy-article blockquote {
+  border-left: 4px solid #d4d4d4;
+  padding-left: 1rem;
+  font-style: italic;
+  color: #525252;
+  margin: 1rem 0;
+}
+.privacy-article code {
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.9em;
+  background: #f4f4f3;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+.privacy-article hr {
+  margin: 2rem 0;
+  border: 0;
+  border-top: 1px solid #e5e5e3;
+}
