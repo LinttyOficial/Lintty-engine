@@ -73,16 +73,27 @@ public static class Scorer
             _ => "F",
         };
 
-        // Travas absolutas (canon §Travas).
+        // Travas absolutas (canon §Travas): hard lock OR open Critical force
+        // grade F. The deduction loop already counts these into the score,
+        // but the grade gate is independent — even a high score with one
+        // hard lock collapses to F.
         var anyOpenCritical = violations.Any(v =>
             v.Severity == Severity.Critical
             && !(validSet.Contains((v.File, v.Line, v.RuleId)) && !v.IsHardLock));
 
-        bool sealEligible = hardLocksHit.Count == 0 && !anyOpenCritical;
-        if (!sealEligible) grade = "F";
+        if (hardLocksHit.Count > 0 || anyOpenCritical) grade = "F";
+
+        // Seal eligibility: only A or B grant the architectural seal. C/D
+        // means the codebase ships, but with debt the laudo flagged — not a
+        // certification surface. F is excluded by definition (no hard locks,
+        // no open Criticals → grade is at most C anyway, but explicit guard
+        // for clarity). This is a tighter rule than V0 sprint 0 used; the
+        // visual seal on the cover would otherwise read "approved" for a
+        // C-grade audit, which the sales pitch can't defend.
+        bool sealEligible = (grade == "A" || grade == "B");
 
         return new Result(
-            Score: sealEligible ? score : Math.Max(0, score),
+            Score: score,
             Grade: grade,
             SealEligible: sealEligible,
             HardLocksHit: hardLocksHit.OrderBy(s => s, StringComparer.Ordinal).ToArray());
