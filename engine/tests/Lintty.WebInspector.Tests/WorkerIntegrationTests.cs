@@ -22,14 +22,20 @@ namespace Lintty.WebInspector.Tests;
 /// The cross-determinism assertion is the heart of the test: the PDF the
 /// Web Inspector generates must be byte-identical to the PDF the local CLI
 /// generates against the same .sln on the same engine version. That is the
-/// product invariant from <c>13-web-inspector.md</c> §10.
+/// product invariant from <c>13-web-inspector.md</c> §10. Storage backend
+/// changing from SQLite to Postgres (ADR 0007 Sprint 1) does not change
+/// anything that flows into the PDF, so this gate must remain green
+/// across the cut.
 /// </summary>
 [Trait("Category", "Integration")]
-public sealed class WorkerIntegrationTests
+public sealed class WorkerIntegrationTests : WebInspectorTestBase
 {
+    public WorkerIntegrationTests(PostgresFixture pg) : base(pg) { }
+
     [Fact]
     public async Task Saint_Runs_End_To_End_And_Pdf_Matches_Cli_Direct_Invocation()
     {
+        await ResetAsync();
         await RunFixtureAsync(
             fixtureDir: TestPaths.SaintFixture,
             slnFileName: "Saint.sln",
@@ -41,6 +47,7 @@ public sealed class WorkerIntegrationTests
     [Fact]
     public async Task Sinner_Runs_End_To_End_With_F_Grade_And_Three_Hard_Locks()
     {
+        await ResetAsync();
         await RunFixtureAsync(
             fixtureDir: TestPaths.SinnerFixture,
             slnFileName: "Sinner.sln",
@@ -58,6 +65,7 @@ public sealed class WorkerIntegrationTests
     [Fact]
     public async Task SaintNoSln_Runs_End_To_End_And_Pdf_Matches_Cli_Direct_Invocation()
     {
+        await ResetAsync();
         await RunFixtureAsync(
             fixtureDir: TestPaths.SaintNoSlnFixture,
             slnFileName: "lintty.yml",
@@ -66,9 +74,31 @@ public sealed class WorkerIntegrationTests
             expectedHardLocks: 0);
     }
 
+    /// <summary>
+    /// Permissive layer-tagging cross-determinism gate (2026-05-06). The
+    /// Foreigner fixture has three projects with names that match no
+    /// convention pattern AND no <c>lintty.yml</c> — pre-fix, this would
+    /// fail with <c>JobErrorCode.LayerTaggingError</c>; post-fix, the
+    /// engine produces an A-grade laudo with an "Unknown" layer-summary
+    /// row. The Web Inspector PDF must remain byte-identical to the local
+    /// CLI run on the same input.
+    /// </summary>
+    [Fact]
+    public async Task Foreigner_Runs_End_To_End_With_UnknownProjects_And_Pdf_Matches_Cli()
+    {
+        await ResetAsync();
+        await RunFixtureAsync(
+            fixtureDir: TestPaths.ForeignerFixture,
+            slnFileName: "Foreigner.sln",
+            expectedGrade: "A",
+            expectedScore: 100,
+            expectedHardLocks: 0);
+    }
+
     [Fact]
     public async Task NoSln_NoYaml_Empty_Repo_Yields_NoTarget()
     {
+        await ResetAsync();
         // Tiny scratch fixture: a directory with just a README. The worker
         // cloning this finds no .sln, no lintty.yml, no .csproj — resolver
         // surfaces no_target. Per ADR 0006 §8.2 this specific case (zero
@@ -88,6 +118,7 @@ public sealed class WorkerIntegrationTests
     [Fact]
     public async Task SingleCsproj_NoSln_Resolves()
     {
+        await ResetAsync();
         // ADR 0006 §5.4: single-csproj implicit fallback in WebInspector mode.
         // We mirror Saint.Domain (no project references, compiles cleanly on
         // its own) so the engine produces a real grade. The worker should
@@ -98,11 +129,9 @@ public sealed class WorkerIntegrationTests
         CopyTree(domainDir, destDir);
         // Rename csproj so the file's basename is unique. Keep extension.
 
-        await using var factory = new WebInspectorFactory
-        {
-            DisableWorker = false,
-            GitClientOverride = new Fakes.FixtureCopyGitClient(scratch.Path),
-        };
+        await using var factory = CreateFactory();
+        factory.DisableWorker = false;
+        factory.GitClientOverride = new Fakes.FixtureCopyGitClient(scratch.Path);
         var client = factory.CreateClient();
 
         var post = await client.PostAsJsonAsync("/api/jobs", new
@@ -134,6 +163,7 @@ public sealed class WorkerIntegrationTests
     [Fact]
     public async Task MultipleCsprojs_NoSln_Yields_AmbiguousTarget()
     {
+        await ResetAsync();
         // Two csproj, no .sln, no lintty.yml -> ambiguous_target.
         using var scratch = TempFixture.New();
         WriteFakeCsproj(Path.Combine(scratch.Path, "src", "A"), "A");
@@ -144,7 +174,7 @@ public sealed class WorkerIntegrationTests
         Assert.Equal(JobErrorCode.AmbiguousTarget, errorCode);
     }
 
-    private static async Task RunFixtureAsync(
+    private async Task RunFixtureAsync(
         string fixtureDir,
         string slnFileName,
         string expectedGrade,
@@ -156,11 +186,9 @@ public sealed class WorkerIntegrationTests
             $"Engine CLI dll missing at {TestPaths.EngineCliDll} — build Lintty.Engine.Cli first.");
 
         // ── 1. Spin up the host with the fake git client and the worker enabled.
-        await using var factory = new WebInspectorFactory
-        {
-            DisableWorker = false,
-            GitClientOverride = new FixtureCopyGitClient(fixtureDir),
-        };
+        await using var factory = CreateFactory();
+        factory.DisableWorker = false;
+        factory.GitClientOverride = new FixtureCopyGitClient(fixtureDir);
         var client = factory.CreateClient();
 
         // ── 2. Enqueue a job.
@@ -296,13 +324,11 @@ public sealed class WorkerIntegrationTests
     /// until the job leaves <c>queued/running</c>, and returns the final
     /// (error_code, status). Used by the negative-path tests in §9.3.
     /// </summary>
-    private static async Task<(string? ErrorCode, string? Status)> RunWorkerExpectingFailureAsync(string fixtureDir)
+    private async Task<(string? ErrorCode, string? Status)> RunWorkerExpectingFailureAsync(string fixtureDir)
     {
-        await using var factory = new WebInspectorFactory
-        {
-            DisableWorker = false,
-            GitClientOverride = new Fakes.FixtureCopyGitClient(fixtureDir),
-        };
+        await using var factory = CreateFactory();
+        factory.DisableWorker = false;
+        factory.GitClientOverride = new Fakes.FixtureCopyGitClient(fixtureDir);
         var client = factory.CreateClient();
 
         var post = await client.PostAsJsonAsync("/api/jobs", new

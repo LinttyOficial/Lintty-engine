@@ -15,6 +15,7 @@ internal static class FixturePaths
     public static string SinnerExpectedJson => Path.Combine(RepoRoot, "fixtures", "the-sinner",  "expected.json");
     public static string Ninja01ExpectedJson => Path.Combine(RepoRoot, "fixtures", "the-ninja-01", "expected.json");
     public static string SaintNoSlnExpectedJson => Path.Combine(RepoRoot, "fixtures", "the-saint-no-sln", "expected.json");
+    public static string ForeignerExpectedJson => Path.Combine(RepoRoot, "fixtures", "the-foreigner", "expected.json");
 
     private static string LocateRoot()
     {

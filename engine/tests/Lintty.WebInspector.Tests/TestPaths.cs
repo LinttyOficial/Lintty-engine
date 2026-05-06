@@ -17,6 +17,7 @@ internal static class TestPaths
     public static string SaintFixture  => Path.Combine(FixturesDir, "the-saint");
     public static string SinnerFixture => Path.Combine(FixturesDir, "the-sinner");
     public static string SaintNoSlnFixture => Path.Combine(FixturesDir, "the-saint-no-sln");
+    public static string ForeignerFixture => Path.Combine(FixturesDir, "the-foreigner");
 
     /// <summary>
     /// Returns the path to <c>lintty-engine.dll</c> built by the sibling

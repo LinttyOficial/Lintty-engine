@@ -15,6 +15,8 @@ public static class FixturePaths
     public static string Ninja01 => Path.Combine(RepoRoot, "fixtures", "the-ninja-01", "Ninja01.sln");
     public static string SaintNoSlnDir => Path.Combine(RepoRoot, "fixtures", "the-saint-no-sln");
     public static string SaintNoSlnYaml => Path.Combine(SaintNoSlnDir, "lintty.yml");
+    public static string ForeignerDir => Path.Combine(RepoRoot, "fixtures", "the-foreigner");
+    public static string Foreigner => Path.Combine(ForeignerDir, "Foreigner.sln");
 
     private static string LocateRoot()
     {
