@@ -93,67 +93,29 @@ public static class TargetResolver
 
     private static ResolvedTarget ResolveFromDir(string dir, TargetResolverMode mode)
     {
-        // 2a — .sln in the root takes precedence (back-compat).
-        var slns = Directory
-            .EnumerateFiles(dir, "*.sln", SearchOption.TopDirectoryOnly)
-            .OrderBy(p => p, StringComparer.Ordinal)
-            .ToList();
-
+        var slns = EnumerateSlns(dir);
         var yamlPath = Path.Combine(dir, "lintty.yml");
         var hasYaml = File.Exists(yamlPath);
         var yamlConfig = hasYaml ? LinttyConfig.LoadOrDefault(yamlPath) : null;
         var yamlDeclaresProjects = yamlConfig is not null && yamlConfig.Projects.Count > 0;
 
+        // 2a — .sln in the root takes precedence (back-compat).
         if (slns.Count >= 1)
         {
-            if (slns.Count > 1)
-            {
-                var list = string.Join(", ", slns.Select(Path.GetFileName));
-                throw NewError(
-                    TargetResolutionErrorCode.AmbiguousTargetMultipleSlns,
-                    $"Multiple .sln files found in {dir}: {list}. Pick one with --target.");
-            }
-
-            if (yamlDeclaresProjects)
-            {
-                throw NewError(
-                    TargetResolutionErrorCode.AmbiguousTargetSlnAndProjects,
-                    $"Both {slns[0]} and 'projects:' in {yamlPath} declare scope. " +
-                    "Remove 'projects:' or analyze the .csproj list directly with --target <path/to/lintty.yml>.");
-            }
-
-            return ResolvedTarget.ForSolution(slns[0]);
+            return TryResolveFromSln(slns, yamlPath, yamlDeclaresProjects, dir);
         }
 
         // 2b — no .sln; try lintty.yml with projects:
         if (hasYaml)
         {
-            return ResolveFromYaml(yamlPath);
+            return TryResolveFromYaml(yamlPath);
         }
 
         // 2c — Web Inspector only: lone .csproj exception.
         if (mode == TargetResolverMode.WebInspector)
         {
-            var csprojs = Directory
-                .EnumerateFiles(dir, "*.csproj", SearchOption.AllDirectories)
-                .Where(p => !ContainsObjOrBin(p))
-                .OrderBy(p => p, StringComparer.Ordinal)
-                .ToList();
-
-            if (csprojs.Count == 1)
-            {
-                return ResolvedTarget.ForProjectList(
-                    new[] { csprojs[0] },
-                    solutionPathForReporting: csprojs[0],
-                    yamlDir: null);
-            }
-            if (csprojs.Count >= 2)
-            {
-                throw NewError(
-                    TargetResolutionErrorCode.AmbiguousTargetMultipleCsprojs,
-                    "Multiple .csproj files found and no .sln or lintty.yml. " +
-                    "Add a lintty.yml with 'projects:' to declare scope.");
-            }
+            var fallback = TryResolveFromSingleCsproj(dir);
+            if (fallback is not null) return fallback;
         }
 
         // Fall through: nothing usable.
@@ -163,6 +125,73 @@ public static class TargetResolver
         throw NewError(
             TargetResolutionErrorCode.NoTarget,
             $"No target found in {dir}. {hint}");
+    }
+
+    private static List<string> EnumerateSlns(string dir)
+        => Directory
+            .EnumerateFiles(dir, "*.sln", SearchOption.TopDirectoryOnly)
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+    private static ResolvedTarget TryResolveFromSln(
+        List<string> slns,
+        string yamlPath,
+        bool yamlDeclaresProjects,
+        string dir)
+    {
+        if (slns.Count > 1)
+        {
+            var list = string.Join(", ", slns.Select(Path.GetFileName));
+            throw NewError(
+                TargetResolutionErrorCode.AmbiguousTargetMultipleSlns,
+                $"Multiple .sln files found in {dir}: {list}. Pick one with --target.");
+        }
+
+        if (yamlDeclaresProjects)
+        {
+            throw NewError(
+                TargetResolutionErrorCode.AmbiguousTargetSlnAndProjects,
+                $"Both {slns[0]} and 'projects:' in {yamlPath} declare scope. " +
+                "Remove 'projects:' or analyze the .csproj list directly with --target <path/to/lintty.yml>.");
+        }
+
+        return ResolvedTarget.ForSolution(slns[0]);
+    }
+
+    /// <summary>
+    /// Wraps <see cref="ResolveFromYaml"/> for the directory-mode call site so
+    /// the path-3 branches are uniformly named (TryResolveFromX).
+    /// </summary>
+    private static ResolvedTarget TryResolveFromYaml(string yamlPath) => ResolveFromYaml(yamlPath);
+
+    /// <summary>
+    /// Returns the resolved target when exactly one .csproj is present under
+    /// <paramref name="dir"/> (excluding obj/bin); throws when there are 2+
+    /// (ambiguous); returns null when there are zero.
+    /// </summary>
+    private static ResolvedTarget? TryResolveFromSingleCsproj(string dir)
+    {
+        var csprojs = Directory
+            .EnumerateFiles(dir, "*.csproj", SearchOption.AllDirectories)
+            .Where(p => !ContainsObjOrBin(p))
+            .OrderBy(p => p, StringComparer.Ordinal)
+            .ToList();
+
+        if (csprojs.Count == 1)
+        {
+            return ResolvedTarget.ForProjectList(
+                new[] { csprojs[0] },
+                solutionPathForReporting: csprojs[0],
+                yamlDir: null);
+        }
+        if (csprojs.Count >= 2)
+        {
+            throw NewError(
+                TargetResolutionErrorCode.AmbiguousTargetMultipleCsprojs,
+                "Multiple .csproj files found and no .sln or lintty.yml. " +
+                "Add a lintty.yml with 'projects:' to declare scope.");
+        }
+        return null;
     }
 
     private static ResolvedTarget ResolveFromYaml(string yamlPath)
@@ -200,73 +229,91 @@ public static class TargetResolver
         for (var i = 0; i < rawEntries.Count; i++)
         {
             var entry = rawEntries[i];
-            if (string.IsNullOrWhiteSpace(entry))
-            {
-                throw NewError(
-                    TargetResolutionErrorCode.InvalidProjectsEntry,
-                    $"projects[{i}] is empty.");
-            }
+            ValidateEntryFormat(entry, i);
 
-            // Reject globs (any '*' or '?' anywhere in the path).
-            if (entry.IndexOfAny(new[] { '*', '?' }) >= 0)
-            {
-                throw NewError(
-                    TargetResolutionErrorCode.InvalidProjectsEntry,
-                    $"globs are not supported in v1.0; declare each .csproj explicitly. Got: {entry}");
-            }
-
-            // Reject absolute paths.
-            if (Path.IsPathRooted(entry))
-            {
-                throw NewError(
-                    TargetResolutionErrorCode.InvalidProjectsEntry,
-                    $"projects[{i}] must be a relative path; got absolute: {entry}");
-            }
-
-            // Must end in .csproj.
-            if (!entry.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
-            {
-                throw NewError(
-                    TargetResolutionErrorCode.InvalidProjectsEntry,
-                    $"projects[{i}] must end in .csproj; got: {entry}");
-            }
-
-            // Resolve against yaml dir.
-            var combined = Path.Combine(yamlDirAbs, entry);
-            var abs = Path.GetFullPath(combined);
-
-            // Containment check: must remain within yamlDir.
-            // Compare with trailing separator so e.g. /foo doesn't match /foo-bar.
-            var sep = Path.DirectorySeparatorChar;
-            var normalisedYamlDir = yamlDirAbs.TrimEnd(sep) + sep;
-            var normalisedAbs = abs;
-            if (!(normalisedAbs + sep).StartsWith(normalisedYamlDir, StringComparison.OrdinalIgnoreCase))
-            {
-                throw NewError(
-                    TargetResolutionErrorCode.InvalidProjectsEntry,
-                    $"projects[{i}] must not escape the lintty.yml directory; got: {entry}");
-            }
-
-            // Duplicate check (case-insensitive on disk paths).
-            if (!seen.Add(abs))
-            {
-                throw NewError(
-                    TargetResolutionErrorCode.InvalidProjectsEntry,
-                    $"projects[] contains duplicate: {entry}");
-            }
-
-            // Existence check.
-            if (!File.Exists(abs))
-            {
-                throw NewError(
-                    TargetResolutionErrorCode.TargetNotFound,
-                    $"projects[{i}] not found relative to lintty.yml: {entry}");
-            }
+            var abs = ResolveAndValidatePath(entry, i, yamlDirAbs);
+            EnsureNoDuplicates(abs, entry, seen);
+            EnsureExists(abs, entry, i);
 
             resolved.Add(abs);
         }
 
         return resolved;
+    }
+
+    private static void ValidateEntryFormat(string entry, int index)
+    {
+        if (string.IsNullOrWhiteSpace(entry))
+        {
+            throw NewError(
+                TargetResolutionErrorCode.InvalidProjectsEntry,
+                $"projects[{index}] is empty.");
+        }
+
+        // Reject globs (any '*' or '?' anywhere in the path).
+        if (entry.IndexOfAny(new[] { '*', '?' }) >= 0)
+        {
+            throw NewError(
+                TargetResolutionErrorCode.InvalidProjectsEntry,
+                $"globs are not supported in v1.0; declare each .csproj explicitly. Got: {entry}");
+        }
+
+        // Reject absolute paths.
+        if (Path.IsPathRooted(entry))
+        {
+            throw NewError(
+                TargetResolutionErrorCode.InvalidProjectsEntry,
+                $"projects[{index}] must be a relative path; got absolute: {entry}");
+        }
+
+        // Must end in .csproj.
+        if (!entry.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
+        {
+            throw NewError(
+                TargetResolutionErrorCode.InvalidProjectsEntry,
+                $"projects[{index}] must end in .csproj; got: {entry}");
+        }
+    }
+
+    private static string ResolveAndValidatePath(string entry, int index, string yamlDirAbs)
+    {
+        // Resolve against yaml dir.
+        var combined = Path.Combine(yamlDirAbs, entry);
+        var abs = Path.GetFullPath(combined);
+
+        // Containment check: must remain within yamlDir.
+        // Compare with trailing separator so e.g. /foo doesn't match /foo-bar.
+        var sep = Path.DirectorySeparatorChar;
+        var normalisedYamlDir = yamlDirAbs.TrimEnd(sep) + sep;
+        if (!(abs + sep).StartsWith(normalisedYamlDir, StringComparison.OrdinalIgnoreCase))
+        {
+            throw NewError(
+                TargetResolutionErrorCode.InvalidProjectsEntry,
+                $"projects[{index}] must not escape the lintty.yml directory; got: {entry}");
+        }
+
+        return abs;
+    }
+
+    private static void EnsureNoDuplicates(string abs, string entry, HashSet<string> seen)
+    {
+        // Duplicate check (case-insensitive on disk paths).
+        if (!seen.Add(abs))
+        {
+            throw NewError(
+                TargetResolutionErrorCode.InvalidProjectsEntry,
+                $"projects[] contains duplicate: {entry}");
+        }
+    }
+
+    private static void EnsureExists(string abs, string entry, int index)
+    {
+        if (!File.Exists(abs))
+        {
+            throw NewError(
+                TargetResolutionErrorCode.TargetNotFound,
+                $"projects[{index}] not found relative to lintty.yml: {entry}");
+        }
     }
 
     private static bool ContainsObjOrBin(string path)

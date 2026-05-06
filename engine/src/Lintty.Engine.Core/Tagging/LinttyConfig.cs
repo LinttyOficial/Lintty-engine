@@ -43,27 +43,11 @@ public sealed class LinttyConfig
 
     public static LinttyConfig LoadOrDefault(string? path)
     {
-        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
-            return Default;
-
-        using var reader = new StreamReader(path);
-        var yaml = new YamlStream();
-        yaml.Load(reader);
-
-        if (yaml.Documents.Count == 0)
-            return Default;
-
-        var root = yaml.Documents[0].RootNode as YamlMappingNode;
-        if (root is null)
-            return Default;
-
-        var canonVersion = TryGetScalar(root, "canon_version") ?? "1.0.0";
-        var mode = "convention";
-        var convention = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
-        var explicitMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var projects = new List<string>();
+        var root = ReadYamlOrEmpty(path);
+        if (root is null) return Default;
 
         // Support both flat (canon_version: ...) and nested (lintty: { canon_version: ... }).
+        var canonVersion = TryGetScalar(root, "canon_version") ?? "1.0.0";
         var scope = root;
         if (root.Children.TryGetValue(new YamlScalarNode("lintty"), out var nestedRaw)
             && nestedRaw is YamlMappingNode nested)
@@ -72,50 +56,110 @@ public sealed class LinttyConfig
             canonVersion = TryGetScalar(nested, "canon_version") ?? canonVersion;
         }
 
-        // ADR 0006 §4.6: read `projects:` from the root scope (and the nested
-        // lintty scope if used). Validation against filesystem happens later in
-        // TargetResolver — the parser only reads the YAML literally.
+        var projects = ParseProjectsList(root, scope);
+        var (mode, convention, explicitMap) = ParseLayerTagging(scope);
+
+        return ApplyDefaults(canonVersion, mode, convention, explicitMap, projects);
+    }
+
+    /// <summary>
+    /// Returns the root mapping node when the file exists and parses to a
+    /// YAML mapping; <c>null</c> otherwise (caller falls back to defaults).
+    /// </summary>
+    private static YamlMappingNode? ReadYamlOrEmpty(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))
+            return null;
+
+        using var reader = new StreamReader(path);
+        var yaml = new YamlStream();
+        yaml.Load(reader);
+
+        if (yaml.Documents.Count == 0) return null;
+        return yaml.Documents[0].RootNode as YamlMappingNode;
+    }
+
+    /// <summary>
+    /// ADR 0006 §4.6: read <c>projects:</c> from the root scope and from the
+    /// nested <c>lintty:</c> scope when distinct. Validation against the
+    /// filesystem happens later in <c>TargetResolver</c>.
+    /// </summary>
+    private static List<string> ParseProjectsList(YamlMappingNode root, YamlMappingNode scope)
+    {
+        var projects = new List<string>();
         ReadProjects(root, projects);
         if (!ReferenceEquals(scope, root))
             ReadProjects(scope, projects);
+        return projects;
+    }
+
+    private static (string Mode,
+                    Dictionary<string, IReadOnlyList<string>> ConventionMap,
+                    Dictionary<string, string> ExplicitMap)
+        ParseLayerTagging(YamlMappingNode scope)
+    {
+        var mode = "convention";
+        var convention = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        var explicitMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         if (scope.Children.TryGetValue(new YamlScalarNode("layer_tagging"), out var ltRaw)
             && ltRaw is YamlMappingNode lt)
         {
             mode = TryGetScalar(lt, "mode") ?? mode;
+            ParseConventionMap(lt, convention);
+            ParseExplicitMap(lt, explicitMap);
+        }
+        return (mode, convention, explicitMap);
+    }
 
-            if (lt.Children.TryGetValue(new YamlScalarNode("convention_map"), out var cmRaw)
-                && cmRaw is YamlMappingNode cm)
-            {
-                foreach (var entry in cm.Children)
-                {
-                    if (entry.Key is YamlScalarNode key
-                        && entry.Value is YamlSequenceNode seq)
-                    {
-                        var patterns = new List<string>();
-                        foreach (var item in seq.Children)
-                            if (item is YamlScalarNode s && s.Value is not null)
-                                patterns.Add(s.Value);
-                        convention[key.Value ?? "domain"] = patterns;
-                    }
-                }
-            }
+    private static void ParseConventionMap(
+        YamlMappingNode layerTagging,
+        Dictionary<string, IReadOnlyList<string>> convention)
+    {
+        if (!layerTagging.Children.TryGetValue(new YamlScalarNode("convention_map"), out var cmRaw)
+            || cmRaw is not YamlMappingNode cm)
+            return;
 
-            if (lt.Children.TryGetValue(new YamlScalarNode("explicit_map"), out var emRaw)
-                && emRaw is YamlMappingNode em)
+        foreach (var entry in cm.Children)
+        {
+            if (entry.Key is YamlScalarNode key
+                && entry.Value is YamlSequenceNode seq)
             {
-                foreach (var entry in em.Children)
-                {
-                    if (entry.Key is YamlScalarNode k
-                        && entry.Value is YamlScalarNode v
-                        && k.Value is not null && v.Value is not null)
-                    {
-                        explicitMap[k.Value] = v.Value;
-                    }
-                }
+                var patterns = new List<string>();
+                foreach (var item in seq.Children)
+                    if (item is YamlScalarNode s && s.Value is not null)
+                        patterns.Add(s.Value);
+                convention[key.Value ?? "domain"] = patterns;
             }
         }
+    }
 
+    private static void ParseExplicitMap(
+        YamlMappingNode layerTagging,
+        Dictionary<string, string> explicitMap)
+    {
+        if (!layerTagging.Children.TryGetValue(new YamlScalarNode("explicit_map"), out var emRaw)
+            || emRaw is not YamlMappingNode em)
+            return;
+
+        foreach (var entry in em.Children)
+        {
+            if (entry.Key is YamlScalarNode k
+                && entry.Value is YamlScalarNode v
+                && k.Value is not null && v.Value is not null)
+            {
+                explicitMap[k.Value] = v.Value;
+            }
+        }
+    }
+
+    private static LinttyConfig ApplyDefaults(
+        string canonVersion,
+        string mode,
+        Dictionary<string, IReadOnlyList<string>> convention,
+        Dictionary<string, string> explicitMap,
+        List<string> projects)
+    {
         return new LinttyConfig
         {
             CanonVersion = canonVersion,

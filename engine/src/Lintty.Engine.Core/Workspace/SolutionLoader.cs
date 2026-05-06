@@ -60,24 +60,7 @@ public sealed class SolutionLoader
             return await ManualLoadFromSolutionAsync(solutionPath).ConfigureAwait(false);
         }
 
-        var properties = new Dictionary<string, string>
-        {
-            ["DesignTimeBuild"] = "true",
-            ["BuildingInsideVisualStudio"] = "true",
-            ["AlwaysCompileMarkupFilesInSeparateDomain"] = "false",
-            ["SkipCompilerExecution"] = "true",
-            ["ProvideCommandLineArgs"] = "true",
-        };
-
-        var workspace = MSBuildWorkspace.Create(properties);
-        var warnings = new List<WorkspaceWarning>();
-        workspace.WorkspaceFailed += (sender, args) =>
-        {
-            warnings.Add(new WorkspaceWarning(
-                Kind: args.Diagnostic.Kind.ToString().ToLowerInvariant(),
-                Message: args.Diagnostic.Message,
-                Project: null));
-        };
+        var (workspace, warnings) = OpenMsBuildWorkspace();
 
         Solution solution;
         try
@@ -93,6 +76,57 @@ public sealed class SolutionLoader
             return await ManualLoadFromSolutionAsync(solutionPath).ConfigureAwait(false);
         }
 
+        var (projects, projectRefs) = await CollectProjectsAndCompilationsAsync(solution, warnings).ConfigureAwait(false);
+
+        // If MSBuild loaded zero compilations (typical when the targeting pack
+        // is missing on the host SDK), fall back to the manual loader.
+        if (projects.Count == 0)
+        {
+            workspace.Dispose();
+            return await ManualLoadFromSolutionAsync(solutionPath).ConfigureAwait(false);
+        }
+
+        return new LoadResult(solution, projects, warnings, projectRefs);
+    }
+
+    /// <summary>
+    /// Creates an MSBuildWorkspace with the canonical design-time properties
+    /// and a WorkspaceFailed handler that captures non-fatal diagnostics into
+    /// <c>warnings</c>. Centralised so the fail-fast policy stays in one
+    /// place.
+    /// </summary>
+    private static (MSBuildWorkspace Workspace, List<WorkspaceWarning> Warnings) OpenMsBuildWorkspace()
+    {
+        var properties = new Dictionary<string, string>
+        {
+            ["DesignTimeBuild"] = "true",
+            ["BuildingInsideVisualStudio"] = "true",
+            ["AlwaysCompileMarkupFilesInSeparateDomain"] = "false",
+            ["SkipCompilerExecution"] = "true",
+            ["ProvideCommandLineArgs"] = "true",
+        };
+        var workspace = MSBuildWorkspace.Create(properties);
+        var warnings = new List<WorkspaceWarning>();
+        workspace.WorkspaceFailed += (sender, args) =>
+        {
+            warnings.Add(new WorkspaceWarning(
+                Kind: args.Diagnostic.Kind.ToString().ToLowerInvariant(),
+                Message: args.Diagnostic.Message,
+                Project: null));
+        };
+        return (workspace, warnings);
+    }
+
+    /// <summary>
+    /// Iterates the loaded solution's projects (alphabetical) and pulls a
+    /// compilation per project, capturing failures as warnings rather than
+    /// throws. The project_references map is keyed by name so the engine can
+    /// surface the architectural graph without holding a Solution instance.
+    /// </summary>
+    private static async Task<(List<(Project, Compilation)> Projects,
+                              Dictionary<string, IReadOnlyList<string>> ProjectReferences)>
+        CollectProjectsAndCompilationsAsync(Solution solution, List<WorkspaceWarning> warnings)
+    {
         var projects = new List<(Project, Compilation)>();
         var projectRefs = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
 
@@ -119,15 +153,7 @@ public sealed class SolutionLoader
                 .ToArray();
         }
 
-        // If MSBuild loaded zero compilations (typical when the targeting pack
-        // is missing on the host SDK), fall back to the manual loader.
-        if (projects.Count == 0)
-        {
-            workspace.Dispose();
-            return await ManualLoadFromSolutionAsync(solutionPath).ConfigureAwait(false);
-        }
-
-        return new LoadResult(solution, projects, warnings, projectRefs);
+        return (projects, projectRefs);
     }
 
     /// <summary>
@@ -222,15 +248,51 @@ public sealed class SolutionLoader
         var solutionId = SolutionId.CreateNewId();
         workspace.AddSolution(SolutionInfo.Create(solutionId, VersionStamp.Default));
 
-        // Pass 1: create ProjectId per entry and build a name lookup.
+        var (idByName, nameByCsprojPath) = CreateProjectIds(raw);
+        var metadataRefs = BuildMetadataReferences();
+
+        var projectRefs = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        var infos = new List<ProjectInfo>();
+
+        foreach (var (name, csprojAbs) in raw)
+        {
+            if (!idByName.TryGetValue(name, out var pid)) continue;
+
+            var (rootNs, refNames) = ParseCsproj(csprojAbs, nameByCsprojPath);
+            projectRefs[name] = refNames.OrderBy(n => n, StringComparer.Ordinal).ToArray();
+
+            var docInfos = LoadProjectDocuments(pid, csprojAbs);
+            var info = CreateProjectInfo(pid, name, csprojAbs, docInfos, metadataRefs);
+            infos.Add(info.WithDefaultNamespace(rootNs));
+        }
+
+        var resolvedInfos = ResolveProjectReferences(infos, projectRefs, idByName);
+
+        var solution = workspace.AddSolution(
+            SolutionInfo.Create(
+                solutionId,
+                VersionStamp.Default,
+                filePath: solutionPathForReporting,
+                projects: resolvedInfos));
+
+        var (compilations, warnings) = await CompileInDeclarationOrderAsync(solution, raw, idByName).ConfigureAwait(false);
+        return new LoadResult(solution, compilations, warnings, projectRefs);
+    }
+
+    /// <summary>
+    /// Pass 1: assign a stable <see cref="ProjectId"/> to each unique project
+    /// name, and index csproj path → project name so ProjectReference lookups
+    /// later can find their target by absolute path.
+    /// </summary>
+    private static (Dictionary<string, ProjectId> IdByName,
+                    Dictionary<string, string> NameByCsprojPath)
+        CreateProjectIds(IReadOnlyList<(string Name, string CsprojAbs)> raw)
+    {
         var idByName = new Dictionary<string, ProjectId>(StringComparer.OrdinalIgnoreCase);
-        var pathByName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, abs) in raw)
+        foreach (var (name, _) in raw)
         {
             if (idByName.ContainsKey(name)) continue;
-            var pid = ProjectId.CreateNewId(debugName: name);
-            idByName[name] = pid;
-            pathByName[name] = abs;
+            idByName[name] = ProjectId.CreateNewId(debugName: name);
         }
 
         var nameByCsprojPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -239,94 +301,126 @@ public sealed class SolutionLoader
             nameByCsprojPath[abs] = name;
         }
 
-        var infos = new List<ProjectInfo>();
-        var projectRefs = new Dictionary<string, IReadOnlyList<string>>(StringComparer.OrdinalIgnoreCase);
+        return (idByName, nameByCsprojPath);
+    }
 
-        // Standard references: System runtime + collections + linq + threading.
+    /// <summary>
+    /// Standard MetadataReferences: every BCL DLL on the trusted-platform list.
+    /// Sufficient for type-aware analysis on fixtures that reference only the
+    /// BCL.
+    /// </summary>
+    private static List<MetadataReference> BuildMetadataReferences()
+    {
         var trustedAssemblies = ((string?)AppContext.GetData("TRUSTED_PLATFORM_ASSEMBLIES")) ?? string.Empty;
-        var refPaths = trustedAssemblies
+        return trustedAssemblies
             .Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries)
             .Where(p => p.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
-            .ToArray();
-        var metadataRefs = refPaths
             .Select(p => MetadataReference.CreateFromFile(p))
             .Cast<MetadataReference>()
             .ToList();
+    }
 
-        foreach (var (name, csprojAbs) in raw)
+    /// <summary>
+    /// Reads <c>RootNamespace</c> and resolves in-scope <c>ProjectReference</c>
+    /// includes against <paramref name="nameByCsprojPath"/>. ADR 0006 §6.4:
+    /// references outside the declared scope are silently ignored.
+    /// </summary>
+    private static (string RootNamespace, List<string> ReferencedProjectNames)
+        ParseCsproj(string csprojAbs, Dictionary<string, string> nameByCsprojPath)
+    {
+        var fallbackName = Path.GetFileNameWithoutExtension(csprojAbs);
+        var rootNs = fallbackName;
+        var refNames = new List<string>();
+        var projDir = Path.GetDirectoryName(csprojAbs)!;
+
+        try
         {
-            if (!idByName.TryGetValue(name, out var pid)) continue;
-            var projDir = Path.GetDirectoryName(csprojAbs)!;
-            var rootNs = name; // fallback
-            var refNames = new List<string>();
-            try
+            var doc = XDocument.Load(csprojAbs);
+            var ns = doc.Root?.Name.Namespace ?? XNamespace.None;
+            var rn = doc.Descendants(ns + "RootNamespace").FirstOrDefault()?.Value;
+            if (!string.IsNullOrWhiteSpace(rn)) rootNs = rn;
+
+            foreach (var pr in doc.Descendants(ns + "ProjectReference"))
             {
-                var doc = XDocument.Load(csprojAbs);
-                var ns = doc.Root?.Name.Namespace ?? XNamespace.None;
-                var rn = doc.Descendants(ns + "RootNamespace").FirstOrDefault()?.Value;
-                if (!string.IsNullOrWhiteSpace(rn)) rootNs = rn;
-
-                foreach (var pr in doc.Descendants(ns + "ProjectReference"))
-                {
-                    var include = pr.Attribute("Include")?.Value;
-                    if (string.IsNullOrEmpty(include)) continue;
-                    var refAbs = Path.GetFullPath(Path.Combine(projDir,
-                        include.Replace('\\', Path.DirectorySeparatorChar)));
-                    if (nameByCsprojPath.TryGetValue(refAbs, out var refName))
-                        refNames.Add(refName);
-                    // ADR 0006 §6.4: ProjectReference outside the declared scope
-                    // is silently ignored. The user defined the scope; we don't
-                    // expand it.
-                }
+                var include = pr.Attribute("Include")?.Value;
+                if (string.IsNullOrEmpty(include)) continue;
+                var refAbs = Path.GetFullPath(Path.Combine(projDir,
+                    include.Replace('\\', Path.DirectorySeparatorChar)));
+                if (nameByCsprojPath.TryGetValue(refAbs, out var refName))
+                    refNames.Add(refName);
             }
-            catch { /* swallow csproj parse errors; treat as no-ref */ }
-
-            projectRefs[name] = refNames.OrderBy(n => n, StringComparer.Ordinal).ToArray();
-
-            var docInfos = new List<DocumentInfo>();
-            foreach (var csFile in Directory.EnumerateFiles(projDir, "*.cs", SearchOption.AllDirectories)
-                         .OrderBy(p => p, StringComparer.Ordinal))
-            {
-                var norm = csFile.Replace('\\', '/');
-                if (norm.Contains("/obj/", StringComparison.OrdinalIgnoreCase)) continue;
-                if (norm.Contains("/bin/", StringComparison.OrdinalIgnoreCase)) continue;
-
-                var did = DocumentId.CreateNewId(pid, debugName: csFile);
-                var loader = TextLoader.From(TextAndVersion.Create(
-                    Microsoft.CodeAnalysis.Text.SourceText.From(File.ReadAllText(csFile)),
-                    VersionStamp.Default,
-                    csFile));
-                docInfos.Add(DocumentInfo.Create(
-                    id: did,
-                    name: Path.GetFileName(csFile),
-                    folders: null,
-                    sourceCodeKind: SourceCodeKind.Regular,
-                    loader: loader,
-                    filePath: csFile));
-            }
-
-            var info = ProjectInfo.Create(
-                id: pid,
-                version: VersionStamp.Default,
-                name: name,
-                assemblyName: name,
-                language: LanguageNames.CSharp,
-                filePath: csprojAbs,
-                outputFilePath: null,
-                compilationOptions: new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(
-                    OutputKind.DynamicallyLinkedLibrary,
-                    nullableContextOptions: NullableContextOptions.Enable),
-                parseOptions: new Microsoft.CodeAnalysis.CSharp.CSharpParseOptions(
-                    Microsoft.CodeAnalysis.CSharp.LanguageVersion.CSharp12),
-                documents: docInfos,
-                projectReferences: null,
-                metadataReferences: metadataRefs);
-
-            // Track default namespace via a custom property bag; we'll resolve via name->RootNamespace later.
-            infos.Add(info.WithDefaultNamespace(rootNs));
         }
+        catch { /* swallow csproj parse errors; treat as no-ref */ }
 
-        // Resolve project references after we know all ids.
+        return (rootNs, refNames);
+    }
+
+    /// <summary>
+    /// Enumerates <c>*.cs</c> files under the project directory in ordinal
+    /// order, skipping <c>obj/</c> and <c>bin/</c>. Order preservation is part
+    /// of the determinism contract (ADR 0006 §6.3).
+    /// </summary>
+    private static List<DocumentInfo> LoadProjectDocuments(ProjectId pid, string csprojAbs)
+    {
+        var projDir = Path.GetDirectoryName(csprojAbs)!;
+        var docInfos = new List<DocumentInfo>();
+        foreach (var csFile in Directory.EnumerateFiles(projDir, "*.cs", SearchOption.AllDirectories)
+                     .OrderBy(p => p, StringComparer.Ordinal))
+        {
+            var norm = csFile.Replace('\\', '/');
+            if (norm.Contains("/obj/", StringComparison.OrdinalIgnoreCase)) continue;
+            if (norm.Contains("/bin/", StringComparison.OrdinalIgnoreCase)) continue;
+
+            var did = DocumentId.CreateNewId(pid, debugName: csFile);
+            var loader = TextLoader.From(TextAndVersion.Create(
+                Microsoft.CodeAnalysis.Text.SourceText.From(File.ReadAllText(csFile)),
+                VersionStamp.Default,
+                csFile));
+            docInfos.Add(DocumentInfo.Create(
+                id: did,
+                name: Path.GetFileName(csFile),
+                folders: null,
+                sourceCodeKind: SourceCodeKind.Regular,
+                loader: loader,
+                filePath: csFile));
+        }
+        return docInfos;
+    }
+
+    private static ProjectInfo CreateProjectInfo(
+        ProjectId pid,
+        string name,
+        string csprojAbs,
+        List<DocumentInfo> docInfos,
+        List<MetadataReference> metadataRefs)
+    {
+        return ProjectInfo.Create(
+            id: pid,
+            version: VersionStamp.Default,
+            name: name,
+            assemblyName: name,
+            language: LanguageNames.CSharp,
+            filePath: csprojAbs,
+            outputFilePath: null,
+            compilationOptions: new Microsoft.CodeAnalysis.CSharp.CSharpCompilationOptions(
+                OutputKind.DynamicallyLinkedLibrary,
+                nullableContextOptions: NullableContextOptions.Enable),
+            parseOptions: new Microsoft.CodeAnalysis.CSharp.CSharpParseOptions(
+                Microsoft.CodeAnalysis.CSharp.LanguageVersion.CSharp12),
+            documents: docInfos,
+            projectReferences: null,
+            metadataReferences: metadataRefs);
+    }
+
+    /// <summary>
+    /// Pass 2: now that every project name has an Id, materialise the
+    /// ProjectReference list for each ProjectInfo.
+    /// </summary>
+    private static List<ProjectInfo> ResolveProjectReferences(
+        List<ProjectInfo> infos,
+        Dictionary<string, IReadOnlyList<string>> projectRefs,
+        Dictionary<string, ProjectId> idByName)
+    {
         var resolvedInfos = new List<ProjectInfo>();
         foreach (var info in infos)
         {
@@ -336,18 +430,22 @@ public sealed class SolutionLoader
                 .ToArray();
             resolvedInfos.Add(info.WithProjectReferences(refs));
         }
+        return resolvedInfos;
+    }
 
-        var solution = workspace.AddSolution(
-            SolutionInfo.Create(
-                solutionId,
-                VersionStamp.Default,
-                filePath: solutionPathForReporting,
-                projects: resolvedInfos));
-
-        // Iterate compilations in the original declaration order, matching the
-        // raw list. This is critical for ADR 0006 §4.3 / §6.3 — the engine
-        // (and downstream metrics aggregation) must see projects in the order
-        // declared in lintty.yml, not the alphabetical order of project.Name.
+    /// <summary>
+    /// Iterate compilations in the original declaration order, matching the
+    /// raw list. This is critical for ADR 0006 §4.3 / §6.3 — the engine (and
+    /// downstream metrics aggregation) must see projects in the order
+    /// declared in lintty.yml, not the alphabetical order of project.Name.
+    /// </summary>
+    private static async Task<(List<(Project, Compilation)> Compilations,
+                              List<WorkspaceWarning> Warnings)>
+        CompileInDeclarationOrderAsync(
+            Solution solution,
+            IReadOnlyList<(string Name, string CsprojAbs)> raw,
+            Dictionary<string, ProjectId> idByName)
+    {
         var compilations = new List<(Project, Compilation)>();
         var warnings = new List<WorkspaceWarning>();
         foreach (var (name, _) in raw)
@@ -364,7 +462,6 @@ public sealed class SolutionLoader
             }
             compilations.Add((project, c));
         }
-
-        return new LoadResult(solution, compilations, warnings, projectRefs);
+        return (compilations, warnings);
     }
 }

@@ -50,11 +50,60 @@ public sealed class LinttyEngine
 
     public async Task<ReportDto> AnalyzeAsync(ResolvedTarget target, string? canonVersionOverride)
     {
-        // Reporting base: the directory the report's solution_path is relative
-        // to. For a .sln target, that's the .sln directory; for a project list
-        // (lintty.yml-driven OR a single --target Foo.csproj), that's the
-        // directory of the SolutionPathForReporting (the lintty.yml dir, or
-        // the .csproj parent for a bare-csproj target).
+        var (reportingPath, reportingDir, config, canonVersion) = ResolveReportingAndConfig(target, canonVersionOverride);
+
+        var loaded = await LoadAndTag(target, config).ConfigureAwait(false);
+        var layerByProject = ClassifyLayersOrThrow(loaded, new LayerTagger(config));
+
+        var context = new AnalysisContext
+        {
+            SolutionPath = reportingPath,
+            SolutionDir = reportingDir,
+            Projects = loaded.Projects,
+            LayerByProject = layerByProject,
+            ProjectReferences = loaded.ProjectReferences,
+            Tagger = new LayerTagger(config),
+            Config = config,
+        };
+
+        var allViolations = await RunAllAnalyzersAsync(context, _analyzers).ConfigureAwait(false);
+        var suppressions = await CollectSuppressionsAsync(loaded, context).ConfigureAwait(false);
+
+        var scoring = Scorer.Compute(allViolations, suppressions);
+
+        // Sort violations canonically: file, line, column, rule_id.
+        var sortedViolations = allViolations
+            .OrderBy(v => v.File, StringComparer.Ordinal)
+            .ThenBy(v => v.Line)
+            .ThenBy(v => v.Column)
+            .ThenBy(v => v.RuleId, StringComparer.Ordinal)
+            .ThenBy(v => v.SymbolFqn, StringComparer.Ordinal)
+            .ToList();
+
+        var inputs = new BuildReportInputs(
+            CanonVersion: canonVersion,
+            SolutionPath: reportingPath,
+            SolutionDir: reportingDir,
+            Violations: sortedViolations,
+            Suppressions: suppressions,
+            Scoring: scoring,
+            Warnings: loaded.Warnings,
+            LayerByProject: layerByProject,
+            Projects: loaded.Projects);
+
+        return BuildReport(inputs);
+    }
+
+    /// <summary>
+    /// Resolves the paths used as the report's "reporting base" and loads the
+    /// <c>lintty.yml</c> config (defaulted when missing). The reporting base
+    /// is the directory the report's <c>solution_path</c> is relative to: for
+    /// a .sln target, the .sln directory; for a project list (lintty.yml or a
+    /// single --target Foo.csproj), the SolutionPathForReporting parent.
+    /// </summary>
+    private static (string ReportingPath, string ReportingDir, LinttyConfig Config, string CanonVersion)
+        ResolveReportingAndConfig(ResolvedTarget target, string? canonVersionOverride)
+    {
         var reportingPath = target.SolutionPathForReporting;
         var reportingDir = Path.GetDirectoryName(Path.GetFullPath(reportingPath))!;
 
@@ -65,43 +114,67 @@ public sealed class LinttyEngine
         var config = LinttyConfig.LoadOrDefault(File.Exists(configPath) ? configPath : null);
         var canonVersion = canonVersionOverride ?? config.CanonVersion;
 
+        return (reportingPath, reportingDir, config, canonVersion);
+    }
+
+    private static async Task<SolutionLoader.LoadResult> LoadAndTag(ResolvedTarget target, LinttyConfig config)
+    {
         var loader = new SolutionLoader();
-        SolutionLoader.LoadResult loaded;
         if (target.IsSolution)
         {
-            loaded = await loader.LoadFromSolutionAsync(target.SolutionPath!).ConfigureAwait(false);
+            return await loader.LoadFromSolutionAsync(target.SolutionPath!).ConfigureAwait(false);
         }
-        else
-        {
-            loaded = await loader.LoadFromProjectListAsync(
-                target.ProjectListPaths,
-                target.SolutionPathForReporting).ConfigureAwait(false);
-        }
-        var tagger = new LayerTagger(config);
+        return await loader.LoadFromProjectListAsync(
+            target.ProjectListPaths,
+            target.SolutionPathForReporting).ConfigureAwait(false);
+    }
 
+    /// <summary>
+    /// Canon §"Fail-fast": every loaded project must classify into one of the
+    /// five Canon layers. An unclassified project means convention_map didn't
+    /// match AND there's no explicit_map override — we refuse to produce a
+    /// laudo we can't stand behind.
+    /// </summary>
+    private static Dictionary<string, Layer> ClassifyLayersOrThrow(
+        SolutionLoader.LoadResult loaded,
+        LayerTagger tagger)
+    {
         var layerByProject = new Dictionary<string, Layer>(StringComparer.Ordinal);
         foreach (var (project, _) in loaded.Projects)
             layerByProject[project.Name] = tagger.Classify(project.Name, project.FilePath);
 
-        var context = new AnalysisContext
-        {
-            SolutionPath = reportingPath,
-            SolutionDir = reportingDir,
-            Projects = loaded.Projects,
-            LayerByProject = layerByProject,
-            ProjectReferences = loaded.ProjectReferences,
-            Tagger = tagger,
-            Config = config,
-        };
+        var unclassified = layerByProject
+            .Where(kv => kv.Value == Layer.Unknown)
+            .Select(kv => kv.Key)
+            .OrderBy(n => n, StringComparer.Ordinal)
+            .ToList();
+        if (unclassified.Count > 0)
+            throw new LayerTaggingError(unclassified);
 
+        return layerByProject;
+    }
+
+    private static async Task<List<Violation>> RunAllAnalyzersAsync(
+        AnalysisContext context,
+        IReadOnlyList<IAnalyzer> analyzers)
+    {
         var allViolations = new List<Violation>();
-        foreach (var analyzer in _analyzers)
+        foreach (var analyzer in analyzers)
         {
             var found = await analyzer.AnalyzeAsync(context).ConfigureAwait(false);
             allViolations.AddRange(found);
         }
+        return allViolations;
+    }
 
-        // Suppressions: parse every C# document for @lintty-ignore directives.
+    /// <summary>
+    /// Suppressions: parse every C# document for <c>@lintty-ignore</c>
+    /// directives.
+    /// </summary>
+    private static async Task<List<LinttyIgnoreParser.Suppression>> CollectSuppressionsAsync(
+        SolutionLoader.LoadResult loaded,
+        AnalysisContext context)
+    {
         var suppressions = new List<LinttyIgnoreParser.Suppression>();
         foreach (var (_, compilation) in loaded.Projects)
         {
@@ -121,44 +194,73 @@ public sealed class LinttyEngine
                 }
             }
         }
-
-        var scoring = Scorer.Compute(allViolations, suppressions);
-
-        // Sort violations canonically: file, line, column, rule_id.
-        var sortedViolations = allViolations
-            .OrderBy(v => v.File, StringComparer.Ordinal)
-            .ThenBy(v => v.Line)
-            .ThenBy(v => v.Column)
-            .ThenBy(v => v.RuleId, StringComparer.Ordinal)
-            .ThenBy(v => v.SymbolFqn, StringComparer.Ordinal)
-            .ToList();
-
-        var report = BuildReport(
-            canonVersion: canonVersion,
-            solutionPath: reportingPath,
-            solutionDir: reportingDir,
-            violations: sortedViolations,
-            suppressions: suppressions,
-            scoring: scoring,
-            warnings: loaded.Warnings,
-            layerByProject: layerByProject,
-            projects: loaded.Projects);
-
-        return report;
+        return suppressions;
     }
 
-    private static ReportDto BuildReport(
-        string canonVersion,
-        string solutionPath,
-        string solutionDir,
-        IReadOnlyList<Violation> violations,
-        IReadOnlyList<LinttyIgnoreParser.Suppression> suppressions,
-        Scorer.Result scoring,
-        IReadOnlyList<SolutionLoader.WorkspaceWarning> warnings,
-        IReadOnlyDictionary<string, Layer> layerByProject,
-        IReadOnlyList<(Project Project, Compilation Compilation)> projects)
+    /// <summary>
+    /// All inputs <see cref="BuildReport"/> needs to assemble the final
+    /// <see cref="ReportDto"/>. Introduced to collapse the original 9-parameter
+    /// signature; the underlying assembly logic and field ordering are
+    /// preserved bit-for-bit (locked schema 1.0).
+    /// </summary>
+    private sealed record BuildReportInputs(
+        string CanonVersion,
+        string SolutionPath,
+        string SolutionDir,
+        IReadOnlyList<Violation> Violations,
+        IReadOnlyList<LinttyIgnoreParser.Suppression> Suppressions,
+        Scorer.Result Scoring,
+        IReadOnlyList<SolutionLoader.WorkspaceWarning> Warnings,
+        IReadOnlyDictionary<string, Layer> LayerByProject,
+        IReadOnlyList<(Project Project, Compilation Compilation)> Projects);
+
+    private static ReportDto BuildReport(BuildReportInputs i)
     {
-        // Layer summary.
+        var layerSummary = BuildLayerSummary(i.Projects, i.LayerByProject, i.Violations, i.SolutionDir);
+        var metrics = BuildMetrics(i.Projects, i.LayerByProject);
+        var violationsDto = MapViolations(i.Violations, i.CanonVersion);
+        var exceptionsDto = MapExceptions(i.Suppressions);
+        var diagnosticsDto = MapDiagnostics(i.Warnings);
+        var (runId, scanId) = ComputeIds(i.SolutionPath, i.CanonVersion);
+        var solutionRel = Path.GetFileName(i.SolutionPath);
+
+        return new ReportDto
+        {
+            SchemaVersion = "1.0",
+            RunId = runId,
+            CanonVersion = i.CanonVersion,
+            RuleSetVersion = i.CanonVersion,
+            SolutionPath = solutionRel,
+            Score = i.Scoring.Score,
+            Grade = i.Scoring.Grade,
+            SealEligible = i.Scoring.SealEligible,
+            HardLocksHit = i.Scoring.HardLocksHit,
+            LayerSummary = layerSummary,
+            Violations = violationsDto,
+            Exceptions = exceptionsDto,
+            WorkspaceDiagnostics = diagnosticsDto,
+            InferenceSignature = null,
+            CompileStatus = "success",
+            Metrics = metrics,
+            AiCandidates = System.Array.Empty<object>(),
+            SandboxIntegrity = new SandboxDto(),
+            ScanId = scanId,
+        };
+    }
+
+    /// <summary>
+    /// Builds the per-layer counts (projects/files/violations). Iteration order
+    /// over <paramref name="projects"/> and <paramref name="violations"/> is
+    /// preserved to keep <c>hash_content</c> stable; the final SortedDictionary
+    /// always emits Domain/Application/Infrastructure/Presentation in ordinal
+    /// order (display-cased).
+    /// </summary>
+    private static SortedDictionary<string, LayerSummaryDto> BuildLayerSummary(
+        IReadOnlyList<(Project Project, Compilation Compilation)> projects,
+        IReadOnlyDictionary<string, Layer> layerByProject,
+        IReadOnlyList<Violation> violations,
+        string solutionDir)
+    {
         var layerCounts = new Dictionary<string, (int projects, int files, int violations)>(StringComparer.Ordinal);
         foreach (var layer in new[] { "domain", "application", "infrastructure", "presentation" })
             layerCounts[layer] = (0, 0, 0);
@@ -196,8 +298,13 @@ public sealed class LinttyEngine
                 Violations = kv.Value.violations,
             };
         }
+        return layerSummary;
+    }
 
-        // Metrics.
+    private static MetricsDto BuildMetrics(
+        IReadOnlyList<(Project Project, Compilation Compilation)> projects,
+        IReadOnlyDictionary<string, Layer> layerByProject)
+    {
         var slocByLayer = new SortedDictionary<string, int>(StringComparer.Ordinal);
         var totalSloc = 0;
         foreach (var (project, compilation) in projects)
@@ -215,15 +322,17 @@ public sealed class LinttyEngine
             totalSloc += projectSloc;
         }
 
-        var metrics = new MetricsDto
+        return new MetricsDto
         {
             TotalSlocPhysical = totalSloc,
             SlocPerLayer = slocByLayer,
             ProjectsAnalyzed = projects.Count,
         };
+    }
 
-        // Map violations to DTOs with deterministic fingerprints.
-        var violationsDto = violations
+    private static List<ViolationDto> MapViolations(IReadOnlyList<Violation> violations, string canonVersion)
+    {
+        return violations
             .Select(v => new ViolationDto
             {
                 RuleId = v.RuleId,
@@ -244,9 +353,11 @@ public sealed class LinttyEngine
                 Fingerprint = ComputeFingerprint(v.RuleId, v.CodeSnippet, canonVersion),
             })
             .ToList();
+    }
 
-        // Exceptions.
-        var exceptionsDto = suppressions
+    private static List<ExceptionDto> MapExceptions(IReadOnlyList<LinttyIgnoreParser.Suppression> suppressions)
+    {
+        return suppressions
             .OrderBy(s => s.File, StringComparer.Ordinal)
             .ThenBy(s => s.Line)
             .ThenBy(s => s.RuleId, StringComparer.Ordinal)
@@ -261,8 +372,11 @@ public sealed class LinttyEngine
                 InvalidReason = s.InvalidReason,
             })
             .ToList();
+    }
 
-        var diagnosticsDto = warnings
+    private static List<WorkspaceDiagnosticDto> MapDiagnostics(IReadOnlyList<SolutionLoader.WorkspaceWarning> warnings)
+    {
+        return warnings
             .OrderBy(w => w.Project ?? string.Empty, StringComparer.Ordinal)
             .ThenBy(w => w.Message, StringComparer.Ordinal)
             .Select(w => new WorkspaceDiagnosticDto
@@ -272,36 +386,18 @@ public sealed class LinttyEngine
                 Project = w.Project,
             })
             .ToList();
+    }
 
+    /// <summary>
+    /// run_id and scan_id derived deterministically from solution path + canon
+    /// version. Sprint 2 may revisit (see ADR 0001 §5.6).
+    /// </summary>
+    private static (string RunId, string ScanId) ComputeIds(string solutionPath, string canonVersion)
+    {
         var solutionRel = Path.GetFileName(solutionPath);
-
-        // run_id and scan_id derived deterministically from solution path + canon
-        // version. Sprint 2 may revisit (see ADR 0001 §5.6).
         var runId = ComputeDeterministicId("run", solutionRel, canonVersion);
         var scanId = ComputeDeterministicId("scan", solutionRel, canonVersion);
-
-        return new ReportDto
-        {
-            SchemaVersion = "1.0",
-            RunId = runId,
-            CanonVersion = canonVersion,
-            RuleSetVersion = canonVersion,
-            SolutionPath = solutionRel,
-            Score = scoring.Score,
-            Grade = scoring.Grade,
-            SealEligible = scoring.SealEligible,
-            HardLocksHit = scoring.HardLocksHit,
-            LayerSummary = layerSummary,
-            Violations = violationsDto,
-            Exceptions = exceptionsDto,
-            WorkspaceDiagnostics = diagnosticsDto,
-            InferenceSignature = null,
-            CompileStatus = "success",
-            Metrics = metrics,
-            AiCandidates = System.Array.Empty<object>(),
-            SandboxIntegrity = new SandboxDto(),
-            ScanId = scanId,
-        };
+        return (runId, scanId);
     }
 
     private static Layer LayerForViolation(
