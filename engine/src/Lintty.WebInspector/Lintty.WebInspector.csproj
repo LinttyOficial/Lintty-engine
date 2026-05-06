@@ -24,7 +24,19 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite" />
+    <!--
+      ADR 0007 Sprint 1: Postgres via Npgsql + Dapper for the hot path.
+      Sprint 2: EF Core + Identity own the schema. Coexistence on the same
+      Postgres connection pool is intentional — see LinttyDbContext.cs.
+    -->
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
+    <PackageReference Include="EFCore.NamingConventions" />
+    <PackageReference Include="AspNet.Security.OAuth.GitHub" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 

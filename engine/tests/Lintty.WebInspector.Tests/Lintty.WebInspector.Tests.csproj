@@ -10,6 +10,21 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
+    <!--
+      ADR 0007 Sprint 1: V0 suite runs against Postgres via Testcontainers.
+      One container per test assembly (collection fixture) with TRUNCATE
+      between tests is faster than spinning per-class and isolates state
+      better than a single shared dev DB.
+    -->
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="Npgsql" />
+    <PackageReference Include="Dapper" />
+    <!-- Sprint 2: migration application + DbContext queries from tests. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
+    <PackageReference Include="EFCore.NamingConventions" />
   </ItemGroup>
 
   <ItemGroup>
