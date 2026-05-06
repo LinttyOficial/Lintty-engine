@@ -20,6 +20,7 @@ public static class Scorer
         bool SealEligible,
         IReadOnlyList<string> HardLocksHit);
 
+    // @lintty-ignore: LNTY-009 reason="Implementação literal da fórmula canônica de scoring (Canon §scoring): pesos C=25/H=10/M=4/L=1, arredondar para múltiplo de 5, clamp 0-100, regras de F automático por crítica aberta e por cap de supressão >10%. A fórmula é a lei do canon — fragmentar em métodos privados oculta a regra de negócio. Coesão é a feature."
     public static Result Compute(
         IReadOnlyList<Violation> violations,
         IReadOnlyList<Suppressions.LinttyIgnoreParser.Suppression> suppressions)

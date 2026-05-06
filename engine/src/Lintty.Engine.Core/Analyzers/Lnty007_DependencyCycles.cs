@@ -68,6 +68,7 @@ public sealed class Lnty007_DependencyCycles : IAnalyzer
         return results;
     }
 
+    // @lintty-ignore: LNTY-009 reason="Construção do grafo de bounded contexts a partir de SemanticModel é uma travessia coesa: para cada syntax tree, resolver o symbol type-aware, mapear o BC do declarante e do referenciado, registrar a aresta. Estado compartilhado (SemanticModel, LayerByProject, dicionário acumulador) torna extract method artificial — passar 4 parâmetros para um helper que faz uma linha de cada vez é piorar a leitura."
     private static async Task<Dictionary<string, HashSet<string>>> BuildBoundedContextGraphAsync(
         AnalysisContext context)
     {
@@ -186,6 +187,7 @@ public sealed class Lnty007_DependencyCycles : IAnalyzer
     }
 
     /// <summary>Iterative Tarjan SCC. Stable ordering: nodes processed alphabetically.</summary>
+    // @lintty-ignore: LNTY-009 reason="Algoritmo de Tarjan SCC iterativo (necessário para evitar stack overflow em grafos profundos). Estrutura nominal de livro: index, lowlink, stack, onStack, recursão StrongConnect emulada com Stack<work>. Quebrar em métodos privados separa estado mutável compartilhado e degrada a leitura sem ganho arquitetural."
     private static List<List<string>> TarjanScc(Dictionary<string, HashSet<string>> graph)
     {
         var index = 0;
