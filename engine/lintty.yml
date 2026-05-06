@@ -1,0 +1,57 @@
+# Lintty self-scan configuration.
+#
+# Classifies the 9 projects of Lintty.Engine.sln so the engine, when run
+# against itself, can produce a complete laudo without falling back to
+# Layer.Unknown (which the canon now refuses — fail-fast per
+# docs/02-canon-v1.md §"Fail-fast").
+#
+# Layer choices, with rationale (the engine internally is a small hexagonal
+# arch: Core is the domain, everything else is an adapter):
+#
+#   Lintty.Engine.Core         → domain
+#       The canon implementation: rules, scoring, model, workspace loader.
+#       Pure logic over Roslyn (a compiler library is not infrastructure
+#       any more than System.IO is — it's a primitive). This IS the
+#       domain of Lintty.
+#
+#   Lintty.Engine.Reporter     → presentation
+#       Render JSON→PDF in memory; no external system boundary, this is
+#       Presentation per hexagonal definition. Receives the already-built
+#       ReportDto (the canonical apparatus output) and produces an
+#       alternative human-facing rendering. There is no external system
+#       being adapted here — the JSON is the domain artifact, the PDF is
+#       a second projection of that artifact for a different audience.
+#       (Reclassified 2026-05-06 per triage-self-scan-2026-05-06.md §4
+#       and the LNTY-008 fix decision.)
+#
+#   Lintty.Engine.Cli          → presentation
+#       Argv → Core → stdout. The user-facing CLI adapter.
+#
+#   Lintty.WebInspector        → presentation
+#       HTTP API + minimal form. Wraps the same CLI as a subprocess and
+#       persists job state in SQLite. Considered "presentation" rather
+#       than "application" because it has no domain operations of its
+#       own — it's an entry adapter that delegates to the CLI.
+#
+#   Lintty.Docs.Pdf            → presentation
+#       Auxiliary CLI for institutional/brand documents (not the laudo).
+#       Same QuestPDF stack but a separate user-facing entrypoint.
+#
+#   *.Tests                    → inherits the layer of what it tests.
+#       Test code escapes LNTY-009 (Method Exceeds Analyzability) only —
+#       see Workspace/TestProjectFilter.cs. Other rules still apply.
+
+canon_version: 1.0.0
+
+layer_tagging:
+  mode: explicit
+  explicit_map:
+    Lintty.Engine.Core.csproj:           domain
+    Lintty.Engine.Cli.csproj:            presentation
+    Lintty.Engine.Reporter.csproj:       presentation
+    Lintty.Docs.Pdf.csproj:              presentation
+    Lintty.WebInspector.csproj:          presentation
+    Lintty.Engine.Core.Tests.csproj:     domain
+    Lintty.Engine.Cli.Tests.csproj:      presentation
+    Lintty.Engine.Reporter.Tests.csproj: presentation
+    Lintty.WebInspector.Tests.csproj:    presentation
