@@ -20,33 +20,64 @@ internal static class ReportViewParser
         using var doc = JsonDocument.Parse(json);
         var root = doc.RootElement;
 
-        string Str(string name, string fallback = "")
-        {
-            if (root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String)
-                return v.GetString() ?? fallback;
-            return fallback;
-        }
+        var hardLocks = ParseHardLocks(root);
+        var layerSummary = ParseLayerSummaryDict(root);
+        var violationsList = ParseViolationsArray(root);
+        var exceptionsList = ParseExceptionsArray(root);
+        var diagnostics = ParseDiagnosticsArray(root);
+        var metrics = ParseMetrics(root);
 
-        int Int(string name, int fallback = 0)
-        {
-            if (root.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number)
-                return v.GetInt32();
-            return fallback;
-        }
+        return new ReportView(
+            SchemaVersion: Str(root, "schema_version", "1.0"),
+            RunId: Str(root, "run_id"),
+            CanonVersion: Str(root, "canon_version", "1.0.0"),
+            RuleSetVersion: Str(root, "rule_set_version", "1.0.0"),
+            SolutionPath: Str(root, "solution_path"),
+            Score: Int(root, "score"),
+            Grade: Str(root, "grade", "F"),
+            SealEligible: Bool(root, "seal_eligible"),
+            HardLocksHit: hardLocks,
+            LayerSummary: layerSummary,
+            Violations: violationsList,
+            Exceptions: exceptionsList,
+            WorkspaceDiagnostics: diagnostics,
+            CompileStatus: Str(root, "compile_status", "success"),
+            Metrics: metrics);
+    }
 
-        bool Bool(string name, bool fallback = false)
-        {
-            if (root.TryGetProperty(name, out var v) &&
-                (v.ValueKind == JsonValueKind.True || v.ValueKind == JsonValueKind.False))
-                return v.GetBoolean();
-            return fallback;
-        }
+    private static string Str(JsonElement el, string name, string fallback = "")
+    {
+        if (el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String)
+            return v.GetString() ?? fallback;
+        return fallback;
+    }
 
+    private static int Int(JsonElement el, string name, int fallback = 0)
+    {
+        if (el.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number)
+            return v.GetInt32();
+        return fallback;
+    }
+
+    private static bool Bool(JsonElement el, string name, bool fallback = false)
+    {
+        if (el.TryGetProperty(name, out var v) &&
+            (v.ValueKind == JsonValueKind.True || v.ValueKind == JsonValueKind.False))
+            return v.GetBoolean();
+        return fallback;
+    }
+
+    private static List<string> ParseHardLocks(JsonElement root)
+    {
         var hardLocks = new List<string>();
         if (root.TryGetProperty("hard_locks_hit", out var hl) && hl.ValueKind == JsonValueKind.Array)
             foreach (var item in hl.EnumerateArray())
                 if (item.ValueKind == JsonValueKind.String) hardLocks.Add(item.GetString()!);
+        return hardLocks;
+    }
 
+    private static Dictionary<string, LayerSummaryView> ParseLayerSummaryDict(JsonElement root)
+    {
         var layerSummary = new Dictionary<string, LayerSummaryView>(StringComparer.Ordinal);
         if (root.TryGetProperty("layer_summary", out var ls) && ls.ValueKind == JsonValueKind.Object)
         {
@@ -62,21 +93,33 @@ internal static class ReportViewParser
                 layerSummary[prop.Name] = new LayerSummaryView(projects, files, violations);
             }
         }
+        return layerSummary;
+    }
 
+    private static List<ViolationView> ParseViolationsArray(JsonElement root)
+    {
         var violationsList = new List<ViolationView>();
         if (root.TryGetProperty("violations", out var vs) && vs.ValueKind == JsonValueKind.Array)
         {
             foreach (var v in vs.EnumerateArray())
                 violationsList.Add(ParseViolation(v));
         }
+        return violationsList;
+    }
 
+    private static List<ExceptionView> ParseExceptionsArray(JsonElement root)
+    {
         var exceptionsList = new List<ExceptionView>();
         if (root.TryGetProperty("exceptions", out var es) && es.ValueKind == JsonValueKind.Array)
         {
             foreach (var e in es.EnumerateArray())
                 exceptionsList.Add(ParseException(e));
         }
+        return exceptionsList;
+    }
 
+    private static List<WorkspaceDiagnosticView> ParseDiagnosticsArray(JsonElement root)
+    {
         var diagnostics = new List<WorkspaceDiagnosticView>();
         if (root.TryGetProperty("workspace_diagnostics", out var wd) && wd.ValueKind == JsonValueKind.Array)
         {
@@ -90,25 +133,7 @@ internal static class ReportViewParser
                 diagnostics.Add(new WorkspaceDiagnosticView(kind, msg, project));
             }
         }
-
-        var metrics = ParseMetrics(root);
-
-        return new ReportView(
-            SchemaVersion: Str("schema_version", "1.0"),
-            RunId: Str("run_id"),
-            CanonVersion: Str("canon_version", "1.0.0"),
-            RuleSetVersion: Str("rule_set_version", "1.0.0"),
-            SolutionPath: Str("solution_path"),
-            Score: Int("score"),
-            Grade: Str("grade", "F"),
-            SealEligible: Bool("seal_eligible"),
-            HardLocksHit: hardLocks,
-            LayerSummary: layerSummary,
-            Violations: violationsList,
-            Exceptions: exceptionsList,
-            WorkspaceDiagnostics: diagnostics,
-            CompileStatus: Str("compile_status", "success"),
-            Metrics: metrics);
+        return diagnostics;
     }
 
     private static ViolationView ParseViolation(JsonElement v)

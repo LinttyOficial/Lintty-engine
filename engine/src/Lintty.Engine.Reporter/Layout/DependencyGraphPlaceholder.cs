@@ -28,74 +28,89 @@ internal static class DependencyGraphPlaceholder
     {
         container.Column(col =>
         {
-            col.Item().Text("Grafo de Dependências (alto nível)")
-                .FontFamily(EmbeddedFonts.Sans).FontSize(14).Bold()
-                .FontColor(LinttyColors.TextPrimary);
+            RenderHeader(col);
+            RenderLayerTable(col, report);
+            RenderHardLockCallout(col, report);
+            RenderFooter(col);
+        });
+    }
 
-            col.Item().PaddingTop(2).LineHorizontal(0.6f).LineColor(LinttyColors.LineFaint);
+    private static void RenderHeader(ColumnDescriptor col)
+    {
+        col.Item().Text("Grafo de Dependências (alto nível)")
+            .FontFamily(EmbeddedFonts.Sans).FontSize(14).Bold()
+            .FontColor(LinttyColors.TextPrimary);
 
-            col.Item().PaddingTop(8).Table(table =>
+        col.Item().PaddingTop(2).LineHorizontal(0.6f).LineColor(LinttyColors.LineFaint);
+    }
+
+    private static void RenderLayerTable(ColumnDescriptor col, ReportView report)
+    {
+        col.Item().PaddingTop(8).Table(table =>
+        {
+            table.ColumnsDefinition(c =>
             {
-                table.ColumnsDefinition(c =>
-                {
-                    c.ConstantColumn(140); // layer
-                    c.ConstantColumn(70);  // projects
-                    c.ConstantColumn(70);  // files
-                    c.RelativeColumn();    // violations
-                });
-
-                Header(table, "layer");
-                Header(table, "projetos");
-                Header(table, "arquivos");
-                Header(table, "violações");
-
-                foreach (var layer in LayerOrder)
-                {
-                    if (!report.LayerSummary.TryGetValue(layer, out var entry))
-                        continue;
-                    Cell(table, layer);
-                    Cell(table, TextHelpers.Number(entry.Projects), mono: true);
-                    Cell(table, TextHelpers.Number(entry.Files), mono: true);
-                    Cell(table, TextHelpers.Number(entry.Violations), mono: true,
-                        color: entry.Violations > 0 ? LinttyColors.HardLockRed : LinttyColors.TextPrimary);
-                }
-
-                // Render any extra layers not in canonical order, sorted alphabetically
-                // so output is stable regardless of input dict ordering.
-                var seen = new HashSet<string>(LayerOrder);
-                var extra = new List<string>();
-                foreach (var k in report.LayerSummary.Keys)
-                    if (!seen.Contains(k)) extra.Add(k);
-                extra.Sort(System.StringComparer.Ordinal);
-                foreach (var layer in extra)
-                {
-                    var entry = report.LayerSummary[layer];
-                    Cell(table, layer);
-                    Cell(table, TextHelpers.Number(entry.Projects), mono: true);
-                    Cell(table, TextHelpers.Number(entry.Files), mono: true);
-                    Cell(table, TextHelpers.Number(entry.Violations), mono: true,
-                        color: entry.Violations > 0 ? LinttyColors.HardLockRed : LinttyColors.TextPrimary);
-                }
+                c.ConstantColumn(140); // layer
+                c.ConstantColumn(70);  // projects
+                c.ConstantColumn(70);  // files
+                c.RelativeColumn();    // violations
             });
 
-            // Hard-lock callout, if any
-            if (report.HardLocksHit.Count > 0)
+            Header(table, "layer");
+            Header(table, "projetos");
+            Header(table, "arquivos");
+            Header(table, "violações");
+
+            foreach (var layer in LayerOrder)
             {
-                col.Item().PaddingTop(10).Background("#FEF2F2").Border(0.5f).BorderColor(LinttyColors.HardLockRed)
-                    .Padding(8).Text(text =>
-                    {
-                        text.Span("Hard locks atingidos: ")
-                            .FontFamily(EmbeddedFonts.Sans).FontSize(9).Bold().FontColor(LinttyColors.HardLockRed);
-                        text.Span(string.Join(", ", report.HardLocksHit))
-                            .FontFamily(EmbeddedFonts.Mono).FontSize(9).FontColor(LinttyColors.HardLockRed);
-                    });
+                if (!report.LayerSummary.TryGetValue(layer, out var entry))
+                    continue;
+                RenderLayerRow(table, layer, entry);
             }
 
-            col.Item().PaddingTop(10).Background("#FFFBEB").Border(0.5f).BorderColor(LinttyColors.WarnAmber)
-                .Padding(8).Text("Diagrama gráfico do grafo de dependências (PNG/SVG embedado) entra em V1+. Sales Cut usa esta tabela textual derivada de layer_summary.")
-                .FontFamily(EmbeddedFonts.Sans).FontSize(8.5f)
-                .FontColor(LinttyColors.WarnAmber).LineHeight(1.4f);
+            // Render any extra layers not in canonical order, sorted alphabetically
+            // so output is stable regardless of input dict ordering.
+            var seen = new HashSet<string>(LayerOrder);
+            var extra = new List<string>();
+            foreach (var k in report.LayerSummary.Keys)
+                if (!seen.Contains(k)) extra.Add(k);
+            extra.Sort(System.StringComparer.Ordinal);
+            foreach (var layer in extra)
+            {
+                RenderLayerRow(table, layer, report.LayerSummary[layer]);
+            }
         });
+    }
+
+    private static void RenderLayerRow(TableDescriptor table, string layer, LayerSummaryView entry)
+    {
+        Cell(table, layer);
+        Cell(table, TextHelpers.Number(entry.Projects), mono: true);
+        Cell(table, TextHelpers.Number(entry.Files), mono: true);
+        Cell(table, TextHelpers.Number(entry.Violations), mono: true,
+            color: entry.Violations > 0 ? LinttyColors.HardLockRed : LinttyColors.TextPrimary);
+    }
+
+    private static void RenderHardLockCallout(ColumnDescriptor col, ReportView report)
+    {
+        if (report.HardLocksHit.Count == 0) return;
+
+        col.Item().PaddingTop(10).Background("#FEF2F2").Border(0.5f).BorderColor(LinttyColors.HardLockRed)
+            .Padding(8).Text(text =>
+            {
+                text.Span("Hard locks atingidos: ")
+                    .FontFamily(EmbeddedFonts.Sans).FontSize(9).Bold().FontColor(LinttyColors.HardLockRed);
+                text.Span(string.Join(", ", report.HardLocksHit))
+                    .FontFamily(EmbeddedFonts.Mono).FontSize(9).FontColor(LinttyColors.HardLockRed);
+            });
+    }
+
+    private static void RenderFooter(ColumnDescriptor col)
+    {
+        col.Item().PaddingTop(10).Background("#FFFBEB").Border(0.5f).BorderColor(LinttyColors.WarnAmber)
+            .Padding(8).Text("Diagrama gráfico do grafo de dependências (PNG/SVG embedado) entra em V1+. Sales Cut usa esta tabela textual derivada de layer_summary.")
+            .FontFamily(EmbeddedFonts.Sans).FontSize(8.5f)
+            .FontColor(LinttyColors.WarnAmber).LineHeight(1.4f);
     }
 
     private static void Header(TableDescriptor table, string text)
