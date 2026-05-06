@@ -20,12 +20,7 @@ internal static class ContentPage
         {
             if (blocks.Count == 0)
             {
-                col.Item().PaddingTop(120).AlignCenter().Text("Conteúdo do documento")
-                    .FontFamily(BrandFonts.Sans).FontSize(11).SemiBold()
-                    .FontColor(BrandColors.TextMuted).LetterSpacing(0.12f);
-                col.Item().PaddingTop(8).AlignCenter().Text("Inserido conforme o contexto de cada documento.")
-                    .FontFamily(BrandFonts.Sans).FontSize(10)
-                    .FontColor(BrandColors.TextMuted);
+                RenderEmptyPlaceholder(col);
                 return;
             }
 
@@ -34,69 +29,94 @@ internal static class ContentPage
         });
     }
 
+    private static void RenderEmptyPlaceholder(ColumnDescriptor col)
+    {
+        col.Item().PaddingTop(120).AlignCenter().Text("Conteúdo do documento")
+            .FontFamily(BrandFonts.Sans).FontSize(11).SemiBold()
+            .FontColor(BrandColors.TextMuted).LetterSpacing(0.12f);
+        col.Item().PaddingTop(8).AlignCenter().Text("Inserido conforme o contexto de cada documento.")
+            .FontFamily(BrandFonts.Sans).FontSize(10)
+            .FontColor(BrandColors.TextMuted);
+    }
+
     private static void Render(ColumnDescriptor col, ContentBlock block)
     {
         switch (block)
         {
-            case ContentBlock.H1 h1:
-                col.Item().PaddingTop(24).Text(h1.Text)
-                    .FontFamily(BrandFonts.Sans).FontSize(22).Bold()
-                    .FontColor(BrandColors.Navy);
-                col.Item().PaddingTop(6).Width(40).Height(1.5f).Background(BrandColors.Accent);
-                break;
-
-            case ContentBlock.H2 h2:
-                col.Item().PaddingTop(20).Text(h2.Text)
-                    .FontFamily(BrandFonts.Sans).FontSize(15).SemiBold()
-                    .FontColor(BrandColors.Navy);
-                break;
-
-            case ContentBlock.Paragraph p:
-                col.Item().PaddingTop(10).Text(p.Text)
-                    .FontFamily(BrandFonts.Sans).FontSize(10.5f)
-                    .FontColor(BrandColors.Ink).LineHeight(1.55f);
-                break;
-
-            case ContentBlock.Code c:
-                col.Item().PaddingTop(12).Background(BrandColors.Surface)
-                    .Padding(12).Text(c.Text)
-                        .FontFamily(BrandFonts.Mono).FontSize(9.5f)
-                        .FontColor(BrandColors.Ink).LineHeight(1.45f);
-                break;
-
-            case ContentBlock.Bullets bs:
-                col.Item().PaddingTop(8).Column(inner =>
-                {
-                    foreach (var item in bs.Items)
-                    {
-                        inner.Item().PaddingTop(4).Row(row =>
-                        {
-                            row.ConstantItem(14).Text("•")
-                                .FontFamily(BrandFonts.Sans).FontSize(11)
-                                .FontColor(BrandColors.Accent);
-                            row.RelativeItem().Text(item)
-                                .FontFamily(BrandFonts.Sans).FontSize(10.5f)
-                                .FontColor(BrandColors.Ink).LineHeight(1.5f);
-                        });
-                    }
-                });
-                break;
-
-            case ContentBlock.Callout co:
-                col.Item().PaddingTop(14).Row(row =>
-                {
-                    row.ConstantItem(3).Background(BrandColors.Accent);
-                    row.ConstantItem(12);
-                    row.RelativeItem().Background(BrandColors.AccentSoft).Padding(12)
-                        .Text(co.Text)
-                            .FontFamily(BrandFonts.Sans).FontSize(10.5f)
-                            .FontColor(BrandColors.Ink).LineHeight(1.5f);
-                });
-                break;
-
-            case ContentBlock.Spacer s:
-                col.Item().Height(s.Height);
-                break;
+            case ContentBlock.H1 h1:        RenderH1(col, h1); break;
+            case ContentBlock.H2 h2:        RenderH2(col, h2); break;
+            case ContentBlock.Paragraph p:  RenderParagraph(col, p); break;
+            case ContentBlock.Code c:       RenderCode(col, c); break;
+            case ContentBlock.Bullets bs:   RenderBullets(col, bs); break;
+            case ContentBlock.Callout co:   RenderCallout(col, co); break;
+            case ContentBlock.Spacer s:     RenderSpacer(col, s); break;
         }
+    }
+
+    private static void RenderH1(ColumnDescriptor col, ContentBlock.H1 h1)
+    {
+        col.Item().PaddingTop(24).Text(h1.Text)
+            .FontFamily(BrandFonts.Sans).FontSize(22).Bold()
+            .FontColor(BrandColors.Navy);
+        col.Item().PaddingTop(6).Width(40).Height(1.5f).Background(BrandColors.Accent);
+    }
+
+    private static void RenderH2(ColumnDescriptor col, ContentBlock.H2 h2)
+    {
+        col.Item().PaddingTop(20).Text(h2.Text)
+            .FontFamily(BrandFonts.Sans).FontSize(15).SemiBold()
+            .FontColor(BrandColors.Navy);
+    }
+
+    private static void RenderParagraph(ColumnDescriptor col, ContentBlock.Paragraph p)
+    {
+        col.Item().PaddingTop(10).Text(p.Text)
+            .FontFamily(BrandFonts.Sans).FontSize(10.5f)
+            .FontColor(BrandColors.Ink).LineHeight(1.55f);
+    }
+
+    private static void RenderCode(ColumnDescriptor col, ContentBlock.Code c)
+    {
+        col.Item().PaddingTop(12).Background(BrandColors.Surface)
+            .Padding(12).Text(c.Text)
+                .FontFamily(BrandFonts.Mono).FontSize(9.5f)
+                .FontColor(BrandColors.Ink).LineHeight(1.45f);
+    }
+
+    private static void RenderBullets(ColumnDescriptor col, ContentBlock.Bullets bs)
+    {
+        col.Item().PaddingTop(8).Column(inner =>
+        {
+            foreach (var item in bs.Items)
+            {
+                inner.Item().PaddingTop(4).Row(row =>
+                {
+                    row.ConstantItem(14).Text("•")
+                        .FontFamily(BrandFonts.Sans).FontSize(11)
+                        .FontColor(BrandColors.Accent);
+                    row.RelativeItem().Text(item)
+                        .FontFamily(BrandFonts.Sans).FontSize(10.5f)
+                        .FontColor(BrandColors.Ink).LineHeight(1.5f);
+                });
+            }
+        });
+    }
+
+    private static void RenderCallout(ColumnDescriptor col, ContentBlock.Callout co)
+    {
+        col.Item().PaddingTop(14).Row(row =>
+        {
+            row.ConstantItem(3).Background(BrandColors.Accent);
+            row.ConstantItem(12);
+            row.RelativeItem().Background(BrandColors.AccentSoft).Padding(12)
+                .Text(co.Text)
+                    .FontFamily(BrandFonts.Sans).FontSize(10.5f)
+                    .FontColor(BrandColors.Ink).LineHeight(1.5f);
+        });
+    }
+
+    private static void RenderSpacer(ColumnDescriptor col, ContentBlock.Spacer s)
+    {
+        col.Item().Height(s.Height);
     }
 }

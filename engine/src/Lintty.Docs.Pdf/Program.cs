@@ -20,6 +20,14 @@ public static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        var coverCommand = BuildCoverCommand();
+        var sampleCommand = BuildSampleCommand();
+        var root = new RootCommand("Lintty white-label PDF generator (brand template).") { coverCommand, sampleCommand };
+        return await root.InvokeAsync(args).ConfigureAwait(false);
+    }
+
+    private static Command BuildCoverCommand()
+    {
         var titleOpt    = new Option<string>("--title",    "Cover title (required).") { IsRequired = true };
         var subtitleOpt = new Option<string?>("--subtitle", "Cover subtitle.");
         var kickerOpt   = new Option<string?>("--kicker",   "Eyebrow tag rendered above the title (uppercased).");
@@ -41,50 +49,26 @@ public static class Program
 
         cover.SetHandler((System.CommandLine.Invocation.InvocationContext ctx) =>
         {
-            var title       = ctx.ParseResult.GetValueForOption(titleOpt)!;
-            var subtitle    = ctx.ParseResult.GetValueForOption(subtitleOpt);
-            var kicker      = ctx.ParseResult.GetValueForOption(kickerOpt);
-            var logo        = ctx.ParseResult.GetValueForOption(logoOpt);
-            var docId       = ctx.ParseResult.GetValueForOption(docIdOpt);
-            var version     = ctx.ParseResult.GetValueForOption(versionOpt);
-            var date        = ctx.ParseResult.GetValueForOption(dateOpt);
-            var site        = ctx.ParseResult.GetValueForOption(siteOpt) ?? "lintty.com";
-            var placeholder = ctx.ParseResult.GetValueForOption(placeholderOpt);
-            var output      = ctx.ParseResult.GetValueForOption(outputOpt)!;
+            var args = new CoverArgs(
+                Title:       ctx.ParseResult.GetValueForOption(titleOpt)!,
+                Subtitle:    ctx.ParseResult.GetValueForOption(subtitleOpt),
+                Kicker:      ctx.ParseResult.GetValueForOption(kickerOpt),
+                Logo:        ctx.ParseResult.GetValueForOption(logoOpt),
+                DocId:       ctx.ParseResult.GetValueForOption(docIdOpt),
+                Version:     ctx.ParseResult.GetValueForOption(versionOpt),
+                Date:        ctx.ParseResult.GetValueForOption(dateOpt),
+                Site:        ctx.ParseResult.GetValueForOption(siteOpt) ?? "lintty.com",
+                Placeholder: ctx.ParseResult.GetValueForOption(placeholderOpt),
+                Output:      ctx.ParseResult.GetValueForOption(outputOpt)!);
 
-            try
-            {
-                var builder = new DocumentBuilder()
-                    .Cover(title, subtitle, kicker)
-                    .WithSite(site);
-
-                if (logo is not null)    builder.WithLogo(logo.FullName);
-                if (docId is not null)   builder.WithDocumentId(docId);
-                if (version is not null) builder.WithVersion(version);
-                if (date is not null)    builder.WithDate(date);
-
-                // The placeholder flag is purely opt-in: if not requested and
-                // no content blocks were added, BrandDocument still emits the
-                // second page with the soft "Conteúdo do documento" hint.
-                // (Behavior preserved so the rendered template always has a
-                // visible "rest goes here" affordance for previews.)
-                if (!placeholder)
-                {
-                    // No-op for now; reserved for a future "cover-only" mode.
-                }
-
-                var sha = builder.Build(output.FullName);
-                Console.Error.WriteLine($"PDF generated: {output.FullName}");
-                Console.Error.WriteLine($"sha256: {sha}");
-                ctx.ExitCode = 0;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine("Error: " + ex.Message);
-                ctx.ExitCode = 2;
-            }
+            ctx.ExitCode = RunCoverCommand(args);
         });
 
+        return cover;
+    }
+
+    private static Command BuildSampleCommand()
+    {
         // ── sample command ────────────────────────────────────────────
         // Renders a full demo: cover + body page exercising every ContentBlock
         // primitive (H1, H2, paragraph, bullets, code, callout). Useful as a
@@ -101,23 +85,74 @@ public static class Program
         sample.SetHandler((System.CommandLine.Invocation.InvocationContext ctx) =>
         {
             var output = ctx.ParseResult.GetValueForOption(sampleOutputOpt)!;
-            try
-            {
-                var sha = BuildSampleDocument(output.FullName);
-                Console.Error.WriteLine($"PDF generated: {output.FullName}");
-                Console.Error.WriteLine($"sha256: {sha}");
-                ctx.ExitCode = 0;
-            }
-            catch (Exception ex)
-            {
-                Console.Error.WriteLine("Error: " + ex.Message);
-                ctx.ExitCode = 2;
-            }
+            ctx.ExitCode = RunSampleCommand(output);
         });
 
-        var root = new RootCommand("Lintty white-label PDF generator (brand template).") { cover, sample };
-        return await root.InvokeAsync(args).ConfigureAwait(false);
+        return sample;
     }
+
+    private static int RunCoverCommand(CoverArgs args)
+    {
+        try
+        {
+            var builder = new DocumentBuilder()
+                .Cover(args.Title, args.Subtitle, args.Kicker)
+                .WithSite(args.Site);
+
+            if (args.Logo is not null)    builder.WithLogo(args.Logo.FullName);
+            if (args.DocId is not null)   builder.WithDocumentId(args.DocId);
+            if (args.Version is not null) builder.WithVersion(args.Version);
+            if (args.Date is not null)    builder.WithDate(args.Date);
+
+            // The placeholder flag is purely opt-in: if not requested and
+            // no content blocks were added, BrandDocument still emits the
+            // second page with the soft "Conteúdo do documento" hint.
+            // (Behavior preserved so the rendered template always has a
+            // visible "rest goes here" affordance for previews.)
+            if (!args.Placeholder)
+            {
+                // No-op for now; reserved for a future "cover-only" mode.
+            }
+
+            var sha = builder.Build(args.Output.FullName);
+            Console.Error.WriteLine($"PDF generated: {args.Output.FullName}");
+            Console.Error.WriteLine($"sha256: {sha}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("Error: " + ex.Message);
+            return 2;
+        }
+    }
+
+    private static int RunSampleCommand(FileInfo output)
+    {
+        try
+        {
+            var sha = BuildSampleDocument(output.FullName);
+            Console.Error.WriteLine($"PDF generated: {output.FullName}");
+            Console.Error.WriteLine($"sha256: {sha}");
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("Error: " + ex.Message);
+            return 2;
+        }
+    }
+
+    private sealed record CoverArgs(
+        string Title,
+        string? Subtitle,
+        string? Kicker,
+        FileInfo? Logo,
+        string? DocId,
+        string? Version,
+        string? Date,
+        string Site,
+        bool Placeholder,
+        FileInfo Output);
 
     /// <summary>
     /// Renders a representative document so the visual identity can be
@@ -126,7 +161,7 @@ public static class Program
     /// </summary>
     private static string BuildSampleDocument(string outputPath)
     {
-        return new DocumentBuilder()
+        var builder = new DocumentBuilder()
             .Cover(
                 title:    "Identidade Visual em PDF",
                 subtitle: "Exemplo do template white-label aplicado a um documento real do projeto Lintty.",
@@ -134,15 +169,30 @@ public static class Program
             .WithDocumentId("BRAND-SAMPLE-001")
             .WithVersion("v0.1")
             .WithDate("2026-04-27")
-            .WithSite("lintty.com")
+            .WithSite("lintty.com");
 
+        AddSampleIntroduction(builder);
+        AddSampleUsageGuidance(builder);
+        AddSampleHowTo(builder);
+        AddSamplePrinciples(builder);
+
+        return builder.Build(outputPath);
+    }
+
+    private static void AddSampleIntroduction(DocumentBuilder builder)
+    {
+        builder
             .AddH1("Sobre este documento")
             .AddParagraph(
                 "Este PDF é um artefato de demonstração da identidade visual Lintty para documentos " +
                 "institucionais. Ele exercita todos os primitivos disponíveis (H1, H2, parágrafo, " +
                 "lista, bloco de código, callout) para que mudanças na identidade possam ser revisadas " +
-                "visualmente em um único arquivo.")
+                "visualmente em um único arquivo.");
+    }
 
+    private static void AddSampleUsageGuidance(DocumentBuilder builder)
+    {
+        builder
             .AddH2("Quando usar este template")
             .AddBullets(
                 "ADRs e specs técnicas distribuídas em PDF.",
@@ -154,8 +204,12 @@ public static class Program
             .AddCallout(
                 "Este template é para documentos institucionais. O PDF do laudo de auditoria " +
                 "tem motor próprio (Lintty.Engine.Reporter), com paleta de severidade vermelho/verde/âmbar. " +
-                "Misturar quebra a leitura — ver ADR 0004 §6.")
+                "Misturar quebra a leitura — ver ADR 0004 §6.");
+    }
 
+    private static void AddSampleHowTo(DocumentBuilder builder)
+    {
+        builder
             .AddH1("Como gerar")
             .AddParagraph("Via API programática:")
             .AddCode(
@@ -175,8 +229,12 @@ public static class Program
                 "lintty-docs cover \\\n" +
                 "  --title \"Título\" --subtitle \"...\" --kicker \"...\" \\\n" +
                 "  --doc-id DOC-001 --version v0.1 --date 2026-04-27 \\\n" +
-                "  --output documento.pdf")
+                "  --output documento.pdf");
+    }
 
+    private static void AddSamplePrinciples(DocumentBuilder builder)
+    {
+        builder
             .AddH1("Princípios da identidade")
             .AddBullets(
                 "Uma única cor de acento (saint green #0F4C3A).",
@@ -187,7 +245,6 @@ public static class Program
                 "A marca aparece no header de toda página, garantindo identificação.")
             .AddCallout(
                 "Spec completa em docs/brand/pdf-identity.md. " +
-                "Decisão arquitetural em docs/adr/0004-brand-pdf-template.md.")
-            .Build(outputPath);
+                "Decisão arquitetural em docs/adr/0004-brand-pdf-template.md.");
     }
 }

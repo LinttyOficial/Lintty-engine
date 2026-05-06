@@ -5,6 +5,7 @@ using System.Threading;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.FileProviders;
 using Microsoft.Extensions.Hosting;
 using Microsoft.OpenApi.Models;
 using Lintty.WebInspector.Configuration;
@@ -24,8 +25,9 @@ namespace Lintty.WebInspector;
 ///   GET  /healthz                   – liveness
 ///
 /// The worker is a single-instance <see cref="JobWorker"/> background service
-/// that pulls queued jobs from SQLite, shells out to the engine CLI as a
-/// subprocess, and cleans up <c>/tmp/lintty-&lt;id&gt;</c>.
+/// that pulls queued jobs from Postgres, shells out to the engine CLI as a
+/// subprocess, and cleans up <c>/tmp/lintty-&lt;id&gt;</c>. Backing store moved
+/// from SQLite to Postgres in ADR 0007 Sprint 1.
 ///
 /// Non-static so tests can use <c>WebApplicationFactory&lt;Program&gt;</c>
 /// (the factory's TEntryPoint generic parameter requires a non-abstract,
@@ -55,31 +57,65 @@ public class Program
 
     public static void ConfigureServices(WebApplicationBuilder builder)
     {
+        RegisterOptions(builder);
+        RegisterJsonSerialization(builder.Services);
+        RegisterJobsInfrastructure(builder.Services);
+        RegisterEngineRunner(builder.Services);
+        RegisterValidationServices(builder.Services);
+        RegisterBackgroundWorkers(builder.Services);
+        RegisterOpenApi(builder.Services);
+    }
+
+    private static void RegisterOptions(WebApplicationBuilder builder)
+    {
         builder.Services.Configure<JobStorageOptions>(builder.Configuration.GetSection(JobStorageOptions.SectionName));
+        builder.Services.Configure<PostgresOptions>(builder.Configuration.GetSection(PostgresOptions.SectionName));
         builder.Services.Configure<EngineOptions>(builder.Configuration.GetSection(EngineOptions.SectionName));
         builder.Services.Configure<RateLimitOptions>(builder.Configuration.GetSection(RateLimitOptions.SectionName));
         builder.Services.Configure<QueueOptions>(builder.Configuration.GetSection(QueueOptions.SectionName));
+    }
 
-        builder.Services.Configure<JsonOptions>(o =>
+    private static void RegisterJsonSerialization(IServiceCollection services)
+    {
+        services.Configure<JsonOptions>(o =>
         {
             // Compact responses; no whitespace surprises in golden curls.
             o.SerializerOptions.WriteIndented = false;
         });
+    }
 
-        builder.Services.AddSingleton<IJobStore, JobStore>();
-        builder.Services.AddSingleton<IGitClient, GitCliClient>();
-        builder.Services.AddSingleton<IEngineRunner, EngineSubprocessRunner>();
+    private static void RegisterJobsInfrastructure(IServiceCollection services)
+    {
+        // ADR 0007 Sprint 1: SQLite is gone; Postgres is the only backing
+        // store. PostgresJobStore is safe as singleton (NpgsqlConnection is
+        // constructed per call and disposed; Npgsql does its own pooling).
+        services.AddSingleton<IJobStore, PostgresJobStore>();
+        services.AddSingleton<IGitClient, GitCliClient>();
+    }
 
-        builder.Services.AddHttpClient<IGitHubMetadataClient, GitHubMetadataClient>(GitHubMetadataClient.HttpClientName);
+    private static void RegisterEngineRunner(IServiceCollection services)
+    {
+        services.AddSingleton<IEngineRunner, EngineSubprocessRunner>();
+    }
 
-        builder.Services.AddHostedService<JobWorker>();
+    private static void RegisterValidationServices(IServiceCollection services)
+    {
+        services.AddHttpClient<IGitHubMetadataClient, GitHubMetadataClient>(GitHubMetadataClient.HttpClientName);
+    }
 
+    private static void RegisterBackgroundWorkers(IServiceCollection services)
+    {
+        services.AddHostedService<JobWorker>();
+    }
+
+    private static void RegisterOpenApi(IServiceCollection services)
+    {
         // ── OpenAPI / Swagger ───────────────────────────────────────────────
         // The Web Inspector API is public (no auth in V0) and documented to
         // clients. Swagger UI is therefore enabled in *all* environments —
         // there's nothing here that should be hidden in prod.
-        builder.Services.AddEndpointsApiExplorer();
-        builder.Services.AddSwaggerGen(c =>
+        services.AddEndpointsApiExplorer();
+        services.AddSwaggerGen(c =>
         {
             c.SwaggerDoc("v0", new OpenApiInfo
             {
@@ -123,14 +159,45 @@ public class Program
             o.DocumentTitle = "Lintty Web Inspector API";
         });
 
+        // ── Static landing assets (dev convenience) ─────────────────────────
+        // When the monorepo `landing/` folder is reachable, serve it at the
+        // root so `http://localhost:5180/inspect.html` works same-origin with
+        // the API and the front-end can `fetch('/api/jobs')` without CORS.
+        // In production the landing is served by Cloudflare Pages, so this
+        // path is intentionally absent from the deployment artifact and the
+        // middleware silently disables itself.
+        var landingRoot = ResolveLandingRoot(app);
+        if (landingRoot is not null)
+        {
+            var fileProvider = new PhysicalFileProvider(landingRoot);
+            app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
+            app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+        }
+
         app.MapHealth();
         app.MapJobs();
     }
 
+    private static string? ResolveLandingRoot(WebApplication app)
+    {
+        // Explicit override wins (production custom path or test fixtures).
+        var configured = app.Configuration["Landing:Root"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return Directory.Exists(configured) ? Path.GetFullPath(configured) : null;
+        }
+
+        // Default monorepo layout: engine/src/Lintty.WebInspector/ → ../../../landing.
+        var candidate = Path.GetFullPath(
+            Path.Combine(app.Environment.ContentRootPath, "..", "..", "..", "landing"));
+        return Directory.Exists(candidate) ? candidate : null;
+    }
+
     public static void InitializeStorage(WebApplication app)
     {
-        // Eagerly build the SQLite schema so the first request is fast and
-        // any IO failure surfaces at startup instead of mid-request.
+        // Eagerly apply the Postgres schema (idempotent — IF NOT EXISTS) so
+        // the first request is fast and any DB connectivity failure surfaces
+        // at startup instead of mid-request.
         using var scope = app.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IJobStore>();
         store.InitializeAsync(default).GetAwaiter().GetResult();
