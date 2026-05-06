@@ -97,140 +97,29 @@ public sealed class JobWorker : BackgroundService
         var engine = services.GetRequiredService<IEngineRunner>();
 
         // Sandbox roots (spec §6.2: only writeable paths are these two).
-        var cloneRoot = Path.Combine(Path.GetTempPath(), $"lintty-{job.Id}");
-        var repoDir = Path.Combine(cloneRoot, "repo");
-        var artifactsRoot = ResolveArtifactsDir(job.Id);
+        var execContext = new JobExecutionContext(
+            Job: job,
+            Store: store,
+            Git: git,
+            Engine: engine,
+            CloneRoot: Path.Combine(Path.GetTempPath(), $"lintty-{job.Id}"),
+            RepoDir: Path.Combine(Path.GetTempPath(), $"lintty-{job.Id}", "repo"),
+            ArtifactsRoot: ResolveArtifactsDir(job.Id));
 
-        Directory.CreateDirectory(cloneRoot);
-        Directory.CreateDirectory(artifactsRoot);
+        Directory.CreateDirectory(execContext.CloneRoot);
+        Directory.CreateDirectory(execContext.ArtifactsRoot);
 
         try
         {
-            // ── 1. Clone ────────────────────────────────────────────────────
-            job.Stage = JobStage.Cloning;
-            await store.UpdateAsync(job, ct).ConfigureAwait(false);
+            if (!await CloneStageAsync(execContext, ct).ConfigureAwait(false)) return;
 
-            var coordsParse = UrlValidator.TryParse(job.GithubUrl, out var parseError);
-            if (coordsParse is null)
-            {
-                await FailAsync(store, job, JobErrorCode.InternalError, parseError ?? "URL parse failed", ct).ConfigureAwait(false);
-                return;
-            }
+            var targetPath = await ResolveTargetStageAsync(execContext, ct).ConfigureAwait(false);
+            if (targetPath is null) return;
 
-            var cloneResult = await git.CloneAsync(coordsParse, job.Ref, token: null, repoDir, ct).ConfigureAwait(false);
-            if (!cloneResult.Success)
-            {
-                await FailAsync(store, job, JobErrorCode.CloneFailed, cloneResult.ErrorMessage ?? "clone failed", ct).ConfigureAwait(false);
-                return;
-            }
+            var runOutput = await RunEngineStageAsync(execContext, targetPath, ct).ConfigureAwait(false);
+            if (runOutput is null) return;
 
-            // ── 2. Resolve target (ADR 0006) ────────────────────────────────
-            string targetPath;
-            try
-            {
-                if (!string.IsNullOrEmpty(job.SolutionPath))
-                {
-                    // Caller supplied an explicit path inside the repo (e.g.
-                    // "src/Foo.sln" or "src/Foo.csproj"). Resolve through the
-                    // resolver so the path is validated against the same rules
-                    // as the implicit case.
-                    var explicitTarget = Path.GetFullPath(Path.Combine(repoDir, job.SolutionPath));
-                    var resolved = TargetResolver.Resolve(
-                        targetArg: explicitTarget,
-                        cwd: repoDir,
-                        mode: TargetResolverMode.WebInspector);
-                    targetPath = resolved.SolutionPathForReporting;
-                }
-                else
-                {
-                    var resolved = TargetResolver.Resolve(
-                        targetArg: null,
-                        cwd: repoDir,
-                        mode: TargetResolverMode.WebInspector);
-                    targetPath = resolved.SolutionPathForReporting;
-                }
-            }
-            catch (TargetResolutionException trex)
-            {
-                var (errorCode, isLegacyNoSln) = MapResolverError(trex, repoDir);
-                if (isLegacyNoSln)
-                {
-                    // Preserve the historical error_code for clones that
-                    // legitimately have zero .sln, no lintty.yml, and not
-                    // exactly one .csproj — see ADR 0006 §8.2.
-                    await FailAsync(store, job, JobErrorCode.NoSln, trex.Message, ct).ConfigureAwait(false);
-                }
-                else
-                {
-                    await FailAsync(store, job, errorCode, trex.Message, ct).ConfigureAwait(false);
-                }
-                return;
-            }
-
-            // ── 3. Invoke engine ────────────────────────────────────────────
-            job.Stage = JobStage.Analyzing;
-            await store.UpdateAsync(job, ct).ConfigureAwait(false);
-
-            var jsonOut = Path.Combine(artifactsRoot, "report.json");
-            var pdfOut = Path.Combine(artifactsRoot, "laudo.pdf");
-            var run = await engine.RunAsync(targetPath, jsonOut, pdfOut, ct).ConfigureAwait(false);
-
-            // Capture engine stderr (no matter the exit code) — it carries the
-            // PDF hash log line and any compile errors.
-            if (!string.IsNullOrEmpty(run.Stderr))
-                _logger.LogInformation("engine stderr:\n{Stderr}", run.Stderr.TrimEnd());
-
-            if (run.ExitCode == 127)
-            {
-                await FailAsync(store, job, JobErrorCode.Timeout, run.Stderr.Trim(), ct).ConfigureAwait(false);
-                return;
-            }
-            if (run.ExitCode == 2)
-            {
-                var errorCode = ClassifyEngineError(run.Stderr);
-                await FailAsync(store, job, errorCode, FirstLine(run.Stderr), ct).ConfigureAwait(false);
-                return;
-            }
-            if (run.ExitCode != 0 && run.ExitCode != 1)
-            {
-                await FailAsync(store, job, JobErrorCode.InternalError,
-                    $"engine returned exit code {run.ExitCode.ToString(CultureInfo.InvariantCulture)}: {FirstLine(run.Stderr)}", ct).ConfigureAwait(false);
-                return;
-            }
-
-            // ── 4. Read JSON to extract score/grade/etc. ────────────────────
-            if (!File.Exists(jsonOut) || !File.Exists(pdfOut))
-            {
-                await FailAsync(store, job, JobErrorCode.InternalError,
-                    "engine completed but artifacts are missing.", ct).ConfigureAwait(false);
-                return;
-            }
-
-            var jsonBytes = await File.ReadAllBytesAsync(jsonOut, ct).ConfigureAwait(false);
-            var jsonHash = Sha256(jsonBytes);
-            var pdfBytes = await File.ReadAllBytesAsync(pdfOut, ct).ConfigureAwait(false);
-            var pdfHash = Sha256(pdfBytes);
-
-            _logger.LogInformation("artifacts: json sha256={JsonHash} pdf sha256={PdfHash} pdf bytes={PdfBytes}",
-                jsonHash, pdfHash, pdfBytes.Length);
-
-            var summary = ParseReportSummary(jsonBytes);
-
-            // ── 5. Mark completed ───────────────────────────────────────────
-            job.Status = JobStatus.Completed;
-            job.Stage = null;
-            job.CompletedAt = DateTime.UtcNow;
-            job.ExpiresAt = job.CompletedAt.Value.AddHours(_engine.ArtifactTtlHours);
-            job.PdfPath = pdfOut;
-            job.JsonPath = jsonOut;
-            job.Score = summary.Score;
-            job.Grade = summary.Grade;
-            job.CanonVersion = summary.CanonVersion;
-            job.ViolationCount = summary.ViolationCount;
-            job.HardLocksOpen = summary.HardLocksOpen;
-            await store.UpdateAsync(job, ct).ConfigureAwait(false);
-            _logger.LogInformation("job completed: grade={Grade} score={Score} violations={V} hard_locks_open={H}",
-                summary.Grade, summary.Score, summary.ViolationCount, summary.HardLocksOpen);
+            await MarkCompletedAsync(execContext, runOutput, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -241,10 +130,173 @@ public sealed class JobWorker : BackgroundService
         finally
         {
             // ── 6. Always purge the clone scratch space ─────────────────────
-            PurgeQuietly(cloneRoot);
+            PurgeQuietly(execContext.CloneRoot);
             _logger.LogInformation("clone purged at {Time}", DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
         }
     }
+
+    /// <summary>
+    /// State the per-job pipeline carries through the stage methods. Lifetime
+    /// is exactly one call to <see cref="RunJobAsync"/>; never shared.
+    /// </summary>
+    private sealed record JobExecutionContext(
+        Job Job,
+        IJobStore Store,
+        IGitClient Git,
+        IEngineRunner Engine,
+        string CloneRoot,
+        string RepoDir,
+        string ArtifactsRoot);
+
+    /// <summary>
+    /// ── 1. Clone ──. Returns <c>true</c> on success, <c>false</c> when the
+    /// job was failed and the pipeline must short-circuit.
+    /// </summary>
+    private async Task<bool> CloneStageAsync(JobExecutionContext c, CancellationToken ct)
+    {
+        c.Job.Stage = JobStage.Cloning;
+        await c.Store.UpdateAsync(c.Job, ct).ConfigureAwait(false);
+
+        var coordsParse = UrlValidator.TryParse(c.Job.GithubUrl, out var parseError);
+        if (coordsParse is null)
+        {
+            await FailAsync(c.Store, c.Job, JobErrorCode.InternalError, parseError ?? "URL parse failed", ct).ConfigureAwait(false);
+            return false;
+        }
+
+        var cloneResult = await c.Git.CloneAsync(coordsParse, c.Job.Ref, token: null, c.RepoDir, ct).ConfigureAwait(false);
+        if (!cloneResult.Success)
+        {
+            await FailAsync(c.Store, c.Job, JobErrorCode.CloneFailed, cloneResult.ErrorMessage ?? "clone failed", ct).ConfigureAwait(false);
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// ── 2. Resolve target (ADR 0006) ──. Returns the resolved target path
+    /// or <c>null</c> if the job was failed.
+    /// </summary>
+    private async Task<string?> ResolveTargetStageAsync(JobExecutionContext c, CancellationToken ct)
+    {
+        try
+        {
+            ResolvedTarget resolved;
+            if (!string.IsNullOrEmpty(c.Job.SolutionPath))
+            {
+                // Caller supplied an explicit path inside the repo (e.g.
+                // "src/Foo.sln" or "src/Foo.csproj"). Resolve through the
+                // resolver so the path is validated against the same rules
+                // as the implicit case.
+                var explicitTarget = Path.GetFullPath(Path.Combine(c.RepoDir, c.Job.SolutionPath));
+                resolved = TargetResolver.Resolve(
+                    targetArg: explicitTarget,
+                    cwd: c.RepoDir,
+                    mode: TargetResolverMode.WebInspector);
+            }
+            else
+            {
+                resolved = TargetResolver.Resolve(
+                    targetArg: null,
+                    cwd: c.RepoDir,
+                    mode: TargetResolverMode.WebInspector);
+            }
+            return resolved.SolutionPathForReporting;
+        }
+        catch (TargetResolutionException trex)
+        {
+            var (errorCode, isLegacyNoSln) = MapResolverError(trex, c.RepoDir);
+            // Preserve the historical error_code for clones that legitimately
+            // have zero .sln, no lintty.yml, and not exactly one .csproj —
+            // see ADR 0006 §8.2.
+            var finalCode = isLegacyNoSln ? JobErrorCode.NoSln : errorCode;
+            await FailAsync(c.Store, c.Job, finalCode, trex.Message, ct).ConfigureAwait(false);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// ── 3 + 4. Invoke engine and read artifacts ──. Returns the parsed
+    /// summary + artifact paths/hashes, or <c>null</c> if the job was failed.
+    /// </summary>
+    private async Task<EngineRunOutput?> RunEngineStageAsync(
+        JobExecutionContext c,
+        string targetPath,
+        CancellationToken ct)
+    {
+        c.Job.Stage = JobStage.Analyzing;
+        await c.Store.UpdateAsync(c.Job, ct).ConfigureAwait(false);
+
+        var jsonOut = Path.Combine(c.ArtifactsRoot, "report.json");
+        var pdfOut = Path.Combine(c.ArtifactsRoot, "laudo.pdf");
+        var run = await c.Engine.RunAsync(targetPath, jsonOut, pdfOut, ct).ConfigureAwait(false);
+
+        // Capture engine stderr (no matter the exit code) — it carries the
+        // PDF hash log line and any compile errors.
+        if (!string.IsNullOrEmpty(run.Stderr))
+            _logger.LogInformation("engine stderr:\n{Stderr}", run.Stderr.TrimEnd());
+
+        if (run.ExitCode == 127)
+        {
+            await FailAsync(c.Store, c.Job, JobErrorCode.Timeout, run.Stderr.Trim(), ct).ConfigureAwait(false);
+            return null;
+        }
+        if (run.ExitCode == 2)
+        {
+            var errorCode = ClassifyEngineError(run.Stderr);
+            await FailAsync(c.Store, c.Job, errorCode, FirstLine(run.Stderr), ct).ConfigureAwait(false);
+            return null;
+        }
+        if (run.ExitCode != 0 && run.ExitCode != 1)
+        {
+            await FailAsync(c.Store, c.Job, JobErrorCode.InternalError,
+                $"engine returned exit code {run.ExitCode.ToString(CultureInfo.InvariantCulture)}: {FirstLine(run.Stderr)}", ct).ConfigureAwait(false);
+            return null;
+        }
+
+        // ── 4. Read JSON to extract score/grade/etc. ────────────────────
+        if (!File.Exists(jsonOut) || !File.Exists(pdfOut))
+        {
+            await FailAsync(c.Store, c.Job, JobErrorCode.InternalError,
+                "engine completed but artifacts are missing.", ct).ConfigureAwait(false);
+            return null;
+        }
+
+        var jsonBytes = await File.ReadAllBytesAsync(jsonOut, ct).ConfigureAwait(false);
+        var jsonHash = Sha256(jsonBytes);
+        var pdfBytes = await File.ReadAllBytesAsync(pdfOut, ct).ConfigureAwait(false);
+        var pdfHash = Sha256(pdfBytes);
+
+        _logger.LogInformation("artifacts: json sha256={JsonHash} pdf sha256={PdfHash} pdf bytes={PdfBytes}",
+            jsonHash, pdfHash, pdfBytes.Length);
+
+        var summary = ParseReportSummary(jsonBytes);
+        return new EngineRunOutput(jsonOut, pdfOut, summary);
+    }
+
+    /// <summary>
+    /// ── 5. Mark completed ──. Updates the job row with grade/score/paths.
+    /// </summary>
+    private async Task MarkCompletedAsync(JobExecutionContext c, EngineRunOutput output, CancellationToken ct)
+    {
+        var summary = output.Summary;
+        c.Job.Status = JobStatus.Completed;
+        c.Job.Stage = null;
+        c.Job.CompletedAt = DateTime.UtcNow;
+        c.Job.ExpiresAt = c.Job.CompletedAt.Value.AddHours(_engine.ArtifactTtlHours);
+        c.Job.PdfPath = output.PdfPath;
+        c.Job.JsonPath = output.JsonPath;
+        c.Job.Score = summary.Score;
+        c.Job.Grade = summary.Grade;
+        c.Job.CanonVersion = summary.CanonVersion;
+        c.Job.ViolationCount = summary.ViolationCount;
+        c.Job.HardLocksOpen = summary.HardLocksOpen;
+        await c.Store.UpdateAsync(c.Job, ct).ConfigureAwait(false);
+        _logger.LogInformation("job completed: grade={Grade} score={Score} violations={V} hard_locks_open={H}",
+            summary.Grade, summary.Score, summary.ViolationCount, summary.HardLocksOpen);
+    }
+
+    private sealed record EngineRunOutput(string JsonPath, string PdfPath, ReportSummary Summary);
 
     /// <summary>
     /// Maps an in-process <see cref="TargetResolutionException"/> to a

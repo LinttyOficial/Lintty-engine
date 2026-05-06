@@ -128,53 +128,106 @@ public static class JobsEndpoints
         if (body is null)
             return BadRequest("invalid_payload", "Request body is required and must be JSON.");
 
-        // ── 1. URL parse ────────────────────────────────────────────────────
-        var coords = UrlValidator.TryParse(body.GithubUrl, out var parseError);
-        if (coords is null)
-            return BadRequest("invalid_url", parseError ?? "github_url is invalid.");
+        var coords = ValidateUrl(body.GithubUrl, out var urlError);
+        if (coords is null) return urlError!;
 
-        // ── 2. Rate limit (per IP per UTC day) ──────────────────────────────
+        var rateLimit = await ValidateRateLimit(ctx, store, rateOpts.Value, ct).ConfigureAwait(false);
+        if (rateLimit.RejectResult is not null) return rateLimit.RejectResult;
+
+        var queueGate = await ValidateQueueCapacity(store, queueOpts.Value, ct).ConfigureAwait(false);
+        if (queueGate is not null) return queueGate;
+
+        var meta = await ValidateRepoAccess(gh, coords, body.GithubToken, ct).ConfigureAwait(false);
+        if (meta.RejectResult is not null) return meta.RejectResult;
+
+        var jobId = await EnqueueJob(store, coords, body, meta.Metadata!, rateLimit.Ip, rateLimit.Day, ct).ConfigureAwait(false);
+        log.LogInformation("queued job {JobId} from ip={Ip} owner={Owner} repo={Repo} ref={Ref}",
+            jobId, rateLimit.Ip, coords.Owner, coords.Repo, body.Ref ?? meta.Metadata!.DefaultBranch ?? "<default>");
+
+        var resp = new CreateJobResponse
+        {
+            JobId = jobId,
+            Status = JobStatus.Queued,
+            PollUrl = $"/api/jobs/{jobId}",
+        };
+        return Results.Json(resp, statusCode: StatusCodes.Status202Accepted);
+    }
+
+    private static GitHubRepoCoordinates? ValidateUrl(string? githubUrl, out IResult? error)
+    {
+        var coords = UrlValidator.TryParse(githubUrl, out var parseError);
+        error = coords is null ? BadRequest("invalid_url", parseError ?? "github_url is invalid.") : null;
+        return coords;
+    }
+
+    private static async Task<RateLimitDecision> ValidateRateLimit(
+        HttpContext ctx,
+        IJobStore store,
+        RateLimitOptions opts,
+        CancellationToken ct)
+    {
         // JobsPerIpPerDay <= 0 disables the cap entirely. The counter is still
-        // incremented at step 5 so we keep the audit trail even when uncapped.
+        // incremented at EnqueueJob so we keep the audit trail even when uncapped.
         var ip = ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown";
         var day = DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        var dailyCap = rateOpts.Value.JobsPerIpPerDay;
+        var dailyCap = opts.JobsPerIpPerDay;
         if (dailyCap > 0)
         {
             var currentCount = await store.GetRateLimitCountAsync(ip, day, ct).ConfigureAwait(false);
             if (currentCount >= dailyCap)
             {
                 ctx.Response.Headers["Retry-After"] = "86400";
-                return Results.Json(
+                var rejection = Results.Json(
                     new ErrorResponse { Error = "rate_limited", Message = $"Limit of {dailyCap} jobs per IP per day exceeded." },
                     statusCode: StatusCodes.Status429TooManyRequests);
+                return new RateLimitDecision(ip, day, rejection);
             }
         }
+        return new RateLimitDecision(ip, day, null);
+    }
 
-        // ── 3. Queue length cap ─────────────────────────────────────────────
+    private static async Task<IResult?> ValidateQueueCapacity(IJobStore store, QueueOptions opts, CancellationToken ct)
+    {
         var active = await store.CountActiveAsync(ct).ConfigureAwait(false);
-        if (active >= queueOpts.Value.MaxLength)
+        if (active >= opts.MaxLength)
         {
             return Results.Json(
                 new ErrorResponse { Error = "queue_full", Message = "Worker is busy. Try again in a few minutes or use the local CLI." },
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
+        return null;
+    }
 
-        // ── 4. GitHub metadata pre-flight ───────────────────────────────────
+    private static async Task<RepoAccessDecision> ValidateRepoAccess(
+        IGitHubMetadataClient gh,
+        GitHubRepoCoordinates coords,
+        string? token,
+        CancellationToken ct)
+    {
         // We don't fail just because the metadata API is slow/down; we DO fail
         // on definitive 404 or oversize repo, per spec §6.
-        var token = body.GithubToken; // local lifetime only
         var meta = await gh.GetMetadataAsync(coords, token, ct).ConfigureAwait(false);
         if (!meta.Exists)
-            return BadRequest("repo_not_accessible", "Repository not found or not accessible. Provide a github_token or use the local CLI.");
+            return new RepoAccessDecision(null, BadRequest("repo_not_accessible", "Repository not found or not accessible. Provide a github_token or use the local CLI."));
         if (meta.Forbidden)
-            return BadRequest("repo_forbidden", "Repository requires authentication. Provide a github_token with `repo` scope.");
+            return new RepoAccessDecision(null, BadRequest("repo_forbidden", "Repository requires authentication. Provide a github_token with `repo` scope."));
 
         const long maxKb = 500L * 1024L; // 500 MB
         if (meta.SizeKilobytes > maxKb)
-            return BadRequest("repo_too_large", "Repos over 500 MB must use the local CLI. Download it from lintty.com.");
+            return new RepoAccessDecision(null, BadRequest("repo_too_large", "Repos over 500 MB must use the local CLI. Download it from lintty.com."));
 
-        // ── 5. Persist job ──────────────────────────────────────────────────
+        return new RepoAccessDecision(meta, null);
+    }
+
+    private static async Task<string> EnqueueJob(
+        IJobStore store,
+        GitHubRepoCoordinates coords,
+        CreateJobRequest body,
+        Lintty.WebInspector.Validation.GitHubRepoMetadata meta,
+        string ip,
+        string day,
+        CancellationToken ct)
+    {
         var jobId = Ulid.New();
         var job = new Job
         {
@@ -187,25 +240,18 @@ public static class JobsEndpoints
         };
         await store.InsertJobAsync(job, ct).ConfigureAwait(false);
         await store.IncrementRateLimitAsync(ip, day, ct).ConfigureAwait(false);
-        log.LogInformation("queued job {JobId} from ip={Ip} owner={Owner} repo={Repo} ref={Ref}",
-            jobId, ip, coords.Owner, coords.Repo, job.Ref ?? "<default>");
 
-        // Token (PAT) lives only in this local frame. We do NOT persist it.
-        // GitHub clones happen via the worker; for V0 we don't yet pipe the
-        // token through to the worker (out of scope for this skeleton — would
-        // require an in-memory token cache keyed by job id with a short TTL).
-        // The clone path is therefore public-only in V0; the response is
-        // unchanged so the API contract for v1 stays compatible.
-        token = null!;
-
-        var resp = new CreateJobResponse
-        {
-            JobId = jobId,
-            Status = JobStatus.Queued,
-            PollUrl = $"/api/jobs/{jobId}",
-        };
-        return Results.Json(resp, statusCode: StatusCodes.Status202Accepted);
+        // Token (PAT) is intentionally not persisted. The clone path is
+        // public-only in V0; the response is unchanged so the API contract
+        // for v1 stays compatible.
+        return jobId;
     }
+
+    private sealed record RateLimitDecision(string Ip, string Day, IResult? RejectResult);
+
+    private sealed record RepoAccessDecision(
+        Lintty.WebInspector.Validation.GitHubRepoMetadata? Metadata,
+        IResult? RejectResult);
 
     /// <summary>
     /// Implementation of <c>GET /api/jobs/{id}</c>. Returns

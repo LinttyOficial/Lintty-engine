@@ -42,6 +42,33 @@ public sealed class GitCliClient : IGitClient
         var parent = Path.GetDirectoryName(destination);
         if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
 
+        var psi = BuildCloneProcessStartInfo(coords, reference, token, destination);
+        _logger.LogInformation("git clone {Owner}/{Repo} ref={Ref} -> {Dest}",
+            coords.Owner, coords.Repo, reference ?? "<default>", destination);
+
+        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        var stderrBuf = new StringBuilder();
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderrBuf.AppendLine(e.Data); };
+
+        var startResult = TryStartProcess(process);
+        if (startResult is not null) return startResult;
+
+        process.BeginErrorReadLine();
+        // We don't care about stdout content for clone, but draining it avoids deadlock.
+        _ = process.StandardOutput.ReadToEndAsync(ct);
+
+        var timeoutResult = await WaitForCompletion(process, ct).ConfigureAwait(false);
+        if (timeoutResult is not null) return timeoutResult;
+
+        return MapCloneResult(process.ExitCode, stderrBuf.ToString(), token);
+    }
+
+    private static ProcessStartInfo BuildCloneProcessStartInfo(
+        GitHubRepoCoordinates coords,
+        string? reference,
+        string? token,
+        string destination)
+    {
         var cloneUrl = coords.CloneUrl(token);
 
         var args = new StringBuilder();
@@ -67,14 +94,11 @@ public sealed class GitCliClient : IGitClient
         // Suppress any interactive credential prompt. We either have a PAT in the
         // URL or the repo is public; anything else must fail fast, not hang.
         psi.Environment["GIT_TERMINAL_PROMPT"] = "0";
+        return psi;
+    }
 
-        _logger.LogInformation("git clone {Owner}/{Repo} ref={Ref} -> {Dest}",
-            coords.Owner, coords.Repo, reference ?? "<default>", destination);
-
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        var stderrBuf = new StringBuilder();
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderrBuf.AppendLine(e.Data); };
-
+    private static GitCloneResult? TryStartProcess(Process process)
+    {
         try
         {
             if (!process.Start())
@@ -84,16 +108,17 @@ public sealed class GitCliClient : IGitClient
         {
             return new GitCloneResult(false, $"git start failed: {ex.Message}");
         }
+        return null;
+    }
 
-        process.BeginErrorReadLine();
-        // We don't care about stdout content for clone, but draining it avoids deadlock.
-        _ = process.StandardOutput.ReadToEndAsync(ct);
-
+    private async Task<GitCloneResult?> WaitForCompletion(Process process, CancellationToken ct)
+    {
         var cloneCt = CancellationTokenSource.CreateLinkedTokenSource(ct);
         cloneCt.CancelAfter(TimeSpan.FromSeconds(_options.CloneTimeoutSeconds));
         try
         {
             await process.WaitForExitAsync(cloneCt.Token).ConfigureAwait(false);
+            return null;
         }
         catch (OperationCanceledException)
         {
@@ -103,18 +128,17 @@ public sealed class GitCliClient : IGitClient
                     ? "clone cancelled"
                     : $"clone exceeded {_options.CloneTimeoutSeconds}s timeout");
         }
+    }
 
-        if (process.ExitCode != 0)
-        {
-            // Scrub the token if it accidentally appears in stderr (some
-            // git versions echo the URL on auth failure).
-            var stderr = stderrBuf.ToString();
-            if (!string.IsNullOrEmpty(token))
-                stderr = stderr.Replace(token, "<redacted>", StringComparison.Ordinal);
-            return new GitCloneResult(false, $"git exit {process.ExitCode}: {stderr.Trim()}");
-        }
+    private static GitCloneResult MapCloneResult(int exitCode, string stderr, string? token)
+    {
+        if (exitCode == 0) return new GitCloneResult(true, null);
 
-        return new GitCloneResult(true, null);
+        // Scrub the token if it accidentally appears in stderr (some
+        // git versions echo the URL on auth failure).
+        if (!string.IsNullOrEmpty(token))
+            stderr = stderr.Replace(token, "<redacted>", StringComparison.Ordinal);
+        return new GitCloneResult(false, $"git exit {exitCode}: {stderr.Trim()}");
     }
 
     private static void TryKill(Process p)

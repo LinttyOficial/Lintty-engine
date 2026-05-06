@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -48,6 +49,30 @@ public sealed class EngineSubprocessRunner : IEngineRunner
                 "lintty-engine.dll not found. Set Engine:CliDllPath in appsettings.json or build the Lintty.Engine.Cli project.");
         }
 
+        var psi = BuildProcessStartInfo(dll, targetPath, jsonOutputPath, pdfOutputPath);
+        _logger.LogInformation("engine: dotnet {Args}", psi.Arguments);
+
+        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
+        var stderrBuf = new StringBuilder();
+        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderrBuf.AppendLine(e.Data); };
+
+        if (!TryStart(process, out var startError))
+            return startError!;
+
+        CaptureStreams(process, ct);
+
+        var timeoutResult = await EnforceTimeout(process, ct).ConfigureAwait(false);
+        if (timeoutResult is not null) return timeoutResult;
+
+        return new EngineRunResult(process.ExitCode, stderrBuf.ToString());
+    }
+
+    private ProcessStartInfo BuildProcessStartInfo(
+        string dll,
+        string targetPath,
+        string jsonOutputPath,
+        string pdfOutputPath)
+    {
         // Compose argv. We pass --output-file so the JSON does not pollute
         // stdout (we capture stderr for log purposes anyway). --fail-on-grade=F
         // ensures exit code 0 for any grade — we want to differentiate
@@ -82,30 +107,43 @@ public sealed class EngineSubprocessRunner : IEngineRunner
         psi.Environment["DOTNET_NOLOGO"] = "1";
         psi.Environment["DOTNET_SKIP_FIRST_TIME_EXPERIENCE"] = "1";
 
-        _logger.LogInformation("engine: dotnet {Args}", args.ToString());
+        return psi;
+    }
 
-        using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
-        var stderrBuf = new StringBuilder();
-        process.ErrorDataReceived += (_, e) => { if (e.Data is not null) stderrBuf.AppendLine(e.Data); };
-
+    private static bool TryStart(Process process, out EngineRunResult? error)
+    {
         try
         {
             if (!process.Start())
-                return new EngineRunResult(2, "dotnet failed to start.");
+            {
+                error = new EngineRunResult(2, "dotnet failed to start.");
+                return false;
+            }
         }
         catch (Exception ex)
         {
-            return new EngineRunResult(2, $"dotnet start failed: {ex.Message}");
+            error = new EngineRunResult(2, $"dotnet start failed: {ex.Message}");
+            return false;
         }
+        error = null;
+        return true;
+    }
 
+    private static void CaptureStreams(Process process, CancellationToken ct)
+    {
         process.BeginErrorReadLine();
+        // We don't care about stdout content but draining it avoids deadlock.
         _ = process.StandardOutput.ReadToEndAsync(ct);
+    }
 
+    private async Task<EngineRunResult?> EnforceTimeout(Process process, CancellationToken ct)
+    {
         var runCt = CancellationTokenSource.CreateLinkedTokenSource(ct);
         runCt.CancelAfter(TimeSpan.FromSeconds(_options.JobTimeoutSeconds));
         try
         {
             await process.WaitForExitAsync(runCt.Token).ConfigureAwait(false);
+            return null;
         }
         catch (OperationCanceledException)
         {
@@ -117,16 +155,17 @@ public sealed class EngineSubprocessRunner : IEngineRunner
                     ? "engine cancelled"
                     : $"engine exceeded {_options.JobTimeoutSeconds}s timeout");
         }
-
-        return new EngineRunResult(process.ExitCode, stderrBuf.ToString());
     }
 
     /// <summary>
     /// Finds the engine CLI dll. Order:
     /// 1. <c>Engine:CliDllPath</c> if explicitly configured (production deployments).
-    /// 2. A relative probe pattern matching the standard <c>dotnet build</c> layout
-    ///    next to this assembly — works in Debug, Release, and tests with the
-    ///    sibling <c>Lintty.Engine.Cli</c> project.
+    /// 2. Sibling project layout, preferring the same build config as the host
+    ///    (Release if running under <c>bin/Release/...</c>, Debug otherwise).
+    ///    Falls back to the most recently written dll if the preferred config
+    ///    is absent — guards against stale Debug dlls when the WebInspector
+    ///    runs Release but a Debug build sits next to it.
+    /// 3. Direct bin layout (when a publish step copied the dll alongside).
     /// </summary>
     private string? ResolveCliDll()
     {
@@ -139,35 +178,61 @@ public sealed class EngineSubprocessRunner : IEngineRunner
         var hostDir = Path.GetDirectoryName(hostAssembly.Location);
         if (string.IsNullOrEmpty(hostDir)) return null;
 
-        // Walk up looking for engine/src/Lintty.Engine.Cli/bin/<config>/net8.0/lintty-engine.dll.
-        // dev / test layout: <repo>/engine/src/Lintty.WebInspector/bin/<cfg>/net8.0/.
+        var preferredConfig = InferBuildConfig(hostDir);
+
         var dir = new DirectoryInfo(hostDir);
         for (var i = 0; i < 8 && dir is not null; i++, dir = dir.Parent)
         {
-            // Try sibling-of-bin layout: ../../../Lintty.Engine.Cli/bin/<cfg>/net8.0/lintty-engine.dll
             var sibling = Path.Combine(dir.FullName, "..", "..", "..", "Lintty.Engine.Cli", "bin");
             if (Directory.Exists(sibling))
             {
-                var found = FindFirstExisting(sibling, "lintty-engine.dll");
+                var found = SelectBestCliDll(sibling, preferredConfig);
                 if (found is not null) return found;
             }
 
-            // Try direct bin layout (when the WebInspector publish copies the dll alongside).
             var local = Path.Combine(dir.FullName, "lintty-engine.dll");
             if (File.Exists(local)) return local;
         }
         return null;
     }
 
-    private static string? FindFirstExisting(string root, string fileName)
+    /// <summary>
+    /// Looks at the host's bin path (<c>.../bin/Release/net8.0/</c>) and
+    /// returns "Release" or "Debug". Defaults to "Release" when the path
+    /// does not contain either marker (e.g., a published deployment).
+    /// </summary>
+    private static string InferBuildConfig(string hostDir)
+    {
+        var normalized = hostDir.Replace('\\', '/');
+        if (normalized.Contains("/bin/Debug/", StringComparison.OrdinalIgnoreCase)) return "Debug";
+        if (normalized.Contains("/bin/Release/", StringComparison.OrdinalIgnoreCase)) return "Release";
+        return "Release";
+    }
+
+    private static string? SelectBestCliDll(string binRoot, string preferredConfig)
     {
         try
         {
-            foreach (var f in Directory.EnumerateFiles(root, fileName, SearchOption.AllDirectories))
-                return f;
+            // 1) Exact preferred config: bin/<preferred>/<tfm>/lintty-engine.dll
+            var preferredDir = Path.Combine(binRoot, preferredConfig);
+            if (Directory.Exists(preferredDir))
+            {
+                var match = Directory.EnumerateFiles(preferredDir, "lintty-engine.dll", SearchOption.AllDirectories)
+                    .OrderByDescending(File.GetLastWriteTimeUtc)
+                    .FirstOrDefault();
+                if (match is not null) return match;
+            }
+
+            // 2) Anything under bin/, freshest first. Prevents accidental selection
+            //    of a stale Debug dll alphabetically ahead of a fresher Release dll.
+            return Directory.EnumerateFiles(binRoot, "lintty-engine.dll", SearchOption.AllDirectories)
+                .OrderByDescending(File.GetLastWriteTimeUtc)
+                .FirstOrDefault();
         }
-        catch { /* fall through */ }
-        return null;
+        catch
+        {
+            return null;
+        }
     }
 
     private static void TryKill(Process p)
