@@ -42,11 +42,26 @@ public sealed class LinttyDbContext : IdentityDbContext<User, Role, long>
     public DbSet<Job> Jobs => Set<Job>();
     public DbSet<RateLimit> RateLimits => Set<RateLimit>();
 
+    // ADR 0007 Sprint 3 — multi-tenant scan ownership + Apêndice E (OAuth
+    // user-token elevation for org listing and private clone).
+    public DbSet<Repo> Repos => Set<Repo>();
+    public DbSet<Scan> Scans => Set<Scan>();
+    public DbSet<GithubUserToken> GithubUserTokens => Set<GithubUserToken>();
+    public DbSet<GithubOrg> GithubOrgs => Set<GithubOrg>();
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         // Identity setup must run first — it configures the AspNet* tables and
         // their relationships. Our overrides come after.
         base.OnModelCreating(builder);
+
+        // ── pgcrypto extension ──────────────────────────────────────────────
+        // Enables gen_random_uuid() used by scans.public_id default. Postgres
+        // 13+ ships gen_random_uuid() in pgcrypto; Postgres 16 (our compose
+        // image) has it but the extension still needs to be enabled in the
+        // target database. EF emits CREATE EXTENSION IF NOT EXISTS pgcrypto
+        // in the migration — idempotent, safe to re-apply.
+        builder.HasPostgresExtension("pgcrypto");
 
         // ── Identity tables: rename from AspNet* to snake_case. ─────────────
         // EFCore.NamingConventions handles columns automatically, but the
@@ -137,6 +152,157 @@ public sealed class LinttyDbContext : IdentityDbContext<User, Role, long>
             b.ToTable("rate_limits");
             b.HasKey(r => new { r.Ip, r.Day });
             b.Property(r => r.Count).IsRequired();
+        });
+
+        // ── repos (ADR 0007 §3.2 + Apêndice E §E.8) ─────────────────────────
+        // GitHub repo registered to a Lintty org. Soft delete via deleted_at
+        // because scans FK to repos and we don't want to lose history when a
+        // user removes a repo from the dashboard.
+        builder.Entity<Repo>(b =>
+        {
+            b.ToTable("repos");
+            b.HasKey(r => r.Id);
+            b.Property(r => r.GithubUrl).IsRequired();
+            b.Property(r => r.IsPrivate).HasDefaultValue(false);
+            b.Property(r => r.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
+
+            b.HasOne(r => r.Org)
+                .WithMany()
+                .HasForeignKey(r => r.OrgId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // RESTRICT: a user who added repos cannot be hard-deleted while
+            // those rows exist. Apêndice E §E.9 contract — added_by_user_id
+            // is the GitHub-token owner for private clone; orphaning it would
+            // break the separation-of-identity invariant.
+            b.HasOne(r => r.AddedByUser)
+                .WithMany()
+                .HasForeignKey(r => r.AddedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // Partial unique: same org cannot register the same URL twice
+            // *while it is active*. Re-adding a previously soft-deleted repo
+            // is allowed — it gets a new row.
+            b.HasIndex(r => new { r.OrgId, r.GithubUrl })
+                .IsUnique()
+                .HasDatabaseName("uq_repos_org_url_active")
+                .HasFilter("deleted_at IS NULL");
+
+            // Lookup by GitHub repo id during Org-import dedup. Sparse —
+            // manual adds leave it null.
+            b.HasIndex(r => r.GithubRepoId)
+                .HasDatabaseName("ix_repos_github_repo_id")
+                .HasFilter("github_repo_id IS NOT NULL");
+        });
+
+        // ── scans (ADR 0007 §3.7) ───────────────────────────────────────────
+        // Multi-tenant scan record. Coexists with the V0 anonymous `jobs`
+        // table — see ADR §3.4 + Apêndice E redesign. Worker drains both
+        // queues in PR 4; this PR only lands the schema.
+        builder.Entity<Scan>(b =>
+        {
+            b.ToTable("scans", t =>
+            {
+                // CHECK constraint matches ScanStatus.* constants verbatim.
+                // Mirrors the OrgRole pattern (string column with app-side
+                // validation) and adds DB-level enforcement because scans is
+                // the determinism gate for Apêndice §3.7 — wrong status
+                // would let the worker pick up a malformed row.
+                t.HasCheckConstraint(
+                    "ck_scans_status",
+                    "status IN ('queued','running','completed','failed','cancelled')");
+            });
+            b.HasKey(s => s.Id);
+
+            b.Property(s => s.PublicId)
+                .IsRequired()
+                .HasDefaultValueSql("gen_random_uuid()");
+
+            b.Property(s => s.CanonVersion).IsRequired().HasMaxLength(16);
+            b.Property(s => s.Status).IsRequired().HasMaxLength(16);
+            b.Property(s => s.QueuedAt).HasDefaultValueSql("now() at time zone 'utc'");
+
+            b.HasOne(s => s.Org)
+                .WithMany()
+                .HasForeignKey(s => s.OrgId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasOne(s => s.Repo)
+                .WithMany()
+                .HasForeignKey(s => s.RepoId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            b.HasOne(s => s.TriggeredByUser)
+                .WithMany()
+                .HasForeignKey(s => s.TriggeredByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // public_id is the URL-facing identifier — must be unique on the
+            // entire scans table.
+            b.HasIndex(s => s.PublicId)
+                .IsUnique()
+                .HasDatabaseName("uq_scans_public_id");
+
+            // Tenant history list: paginated by descending queue time within
+            // a (org, repo). Composite index avoids a sort on the hot path.
+            b.HasIndex(s => new { s.OrgId, s.RepoId, s.QueuedAt })
+                .HasDatabaseName("ix_scans_org_repo_queued_at");
+
+            // Worker queue scan: only queued/running rows are interesting.
+            // Partial index keeps the index tiny (most rows are completed).
+            b.HasIndex(s => s.Status)
+                .HasDatabaseName("ix_scans_status_active")
+                .HasFilter("status IN ('queued','running')");
+        });
+
+        // ── github_user_tokens (Apêndice E §E.6) ────────────────────────────
+        // Per-user OAuth token from the explicit Connect GitHub flow. PK is
+        // user_id — 1:1 with users. Encrypted at rest via IDataProtector
+        // (wired in PR 6); this PR only lands the bytea column.
+        builder.Entity<GithubUserToken>(b =>
+        {
+            b.ToTable("github_user_tokens");
+            b.HasKey(t => t.UserId);
+            b.Property(t => t.UserId).ValueGeneratedNever();   // FK is the PK; no identity gen
+
+            b.Property(t => t.EncryptedToken).IsRequired();
+            // text[] — Npgsql maps string[] to Postgres text[] natively.
+            b.Property(t => t.Scopes).IsRequired().HasColumnType("text[]");
+            b.Property(t => t.GrantedAt).HasDefaultValueSql("now() at time zone 'utc'");
+
+            b.HasOne(t => t.User)
+                .WithOne()
+                .HasForeignKey<GithubUserToken>(t => t.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // Active-token lookup. Most rows will be active; the partial
+            // filter is a small optimization for the revoked path.
+            b.HasIndex(t => t.UserId)
+                .HasDatabaseName("ix_github_user_tokens_active")
+                .HasFilter("revoked_at IS NULL");
+        });
+
+        // ── github_orgs (Apêndice E §E.7) ───────────────────────────────────
+        // Cache of GitHub orgs the user has authorized. user-level binding,
+        // not Lintty-org-level — see entity doc. Refreshed by IGitHubOrgsClient
+        // in PR 6; PR 1 is schema only.
+        builder.Entity<GithubOrg>(b =>
+        {
+            b.ToTable("github_orgs");
+            b.HasKey(o => o.Id);
+            b.Property(o => o.GithubOrgLogin).IsRequired();
+            b.Property(o => o.ConnectedAt).HasDefaultValueSql("now() at time zone 'utc'");
+
+            b.HasOne(o => o.User)
+                .WithMany()
+                .HasForeignKey(o => o.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+
+            // A user cannot have two rows for the same GitHub org. Re-connect
+            // upserts on this key (last wins).
+            b.HasIndex(o => new { o.UserId, o.GithubOrgId })
+                .IsUnique()
+                .HasDatabaseName("uq_github_orgs_user_github_org");
         });
     }
 }
