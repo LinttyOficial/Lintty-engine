@@ -17,6 +17,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
+using Lintty.WebInspector.Artifacts;
 using Lintty.WebInspector.Auth;
 using Lintty.WebInspector.Configuration;
 using Lintty.WebInspector.Endpoints;
@@ -207,6 +208,11 @@ public class Program
         // path via Dapper.
         services.AddSingleton<IJobStore, PostgresJobStore>();
         services.AddSingleton<IGitClient, GitCliClient>();
+
+        // ADR 0007 Sprint 3 §3.8: artifact storage abstraction. V1.0 ships
+        // only the local impl; S3ArtifactStore lands in V1.1. Singleton
+        // because the store is stateless — the filesystem is the truth.
+        services.AddSingleton<IArtifactStore, LocalArtifactStore>();
     }
 
     private static void RegisterEngineRunner(IServiceCollection services)

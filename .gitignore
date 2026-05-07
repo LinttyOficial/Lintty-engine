@@ -32,6 +32,10 @@ project.fragment.lock.json
 project.assets.json
 *.nuget.cache
 artifacts/
+# ADR 0007 §3.8: Lintty source folder named "Artifacts" must NOT be ignored
+# even though the generic NuGet rule above hides anything called artifacts/.
+!engine/src/Lintty.WebInspector/Artifacts/
+!engine/src/Lintty.WebInspector/Artifacts/**
 
 # === Test results / coverage ===
 [Tt]est[Rr]esult*/
