@@ -872,3 +872,322 @@ Sprint 2 novos:
 - **Recovery de senha V1.0 manual via DB** preserva a decisão do brief; `landing/login.html` já tem modal explicando o flow.
 - **Multi-org switcher (claim `org_id`)** ficou como hook no middleware mas sem endpoint que mude o claim. Sprint 3 traz POST `/api/auth/switch-org` quando os endpoints multi-tenant precisarem.
 - **Email verification (`SignIn.RequireConfirmedEmail`)** está `false` no V1.0 conforme decisão do PO. Reabre quando piloto pedir.
+
+## Apêndice E — Sprint 3 PR 0 — Reabertura do §3.6: OAuth user-token elevation para listagem de orgs e clone privado (2026-05-07)
+
+> **Esta nota é exceção ao padrão dos Apêndices C/D.** C e D documentam o **como** de sprints já entregues. E é diferente: documenta a **reabertura formal** de uma decisão fechada (`§3.6 — Token GitHub do usuário descartado após o callback`), tomada antes do código que ela descreve ser escrito. Founder solicitou a feature em 2026-05-07; rastreabilidade exigia adendo dedicado em vez de edição silenciosa do §3.6 — o §3.6 original fica intocado abaixo como registro histórico, e este apêndice é a decisão vigente daqui pra frente. PRs 1, 6 e 7 do Sprint 3 redesenhado se referenciam aqui.
+
+### E.1 Contexto da reabertura
+
+§3.6 fechou em 2026-05-05 com:
+
+> "scopes mínimos `read:user user:email`. Sem `repo`. Sem `read:org`."
+> "**`repo` (read access) NÃO é pedido no V1.0.** Repo privado fica V1.1."
+> "Token GitHub do usuário: **descartado após o callback.** Não persistido."
+
+A postura era deliberada — privacy positioning + adia complexidade de storage cifrado de token até V1.1.
+
+Em 2026-05-07 o founder reabriu pedindo nova capability no dashboard: **user logado conecta uma org GitHub e vê listados todos os repos disponíveis (incluindo privados) para importar e disparar scans**. Isso é o oposto direto do §3.6: exige scopes elevados (`repo` + `read:org`), exige persistir token cifrado, exige clone autenticado.
+
+A decisão é vigente. §3.6 não cobre mais o estado real do produto; este apêndice cobre.
+
+### E.2 Decisão
+
+1. **OAuth user-token elevation, não GitHub App.** Reusa o `IGitHubOAuthClient` já implementado em `engine/src/Lintty.WebInspector/Auth/GitHubOAuthClient.cs` (Sprint 2). Novo client `IGitHubOrgsClient` paralelo para chamadas autenticadas a `GET /user/orgs`, `GET /orgs/{org}/repos`, `GET /user/repos`.
+2. **Scopes novos:** `repo` + `read:org`, **somente** no flow de connect explícito. Login (`/api/auth/github/start`) continua com scopes mínimos do §3.6 original.
+3. **Token persistido cifrado at-rest** em `github_user_tokens`, criptografia via `IDataProtector` da ASP.NET DataProtection (purpose `"github-user-token"`).
+4. **Tabela `github_orgs`** vincula **user → org GitHub** (não Lintty-org → org GitHub — token é per-user).
+5. **`repos`** ganha campos opcionais (`github_repo_id`, `github_org_login`, `default_branch`, `is_private`) preservando compat com repos manuais.
+6. **`GitCliClient`** injeta `https://x-access-token:TOKEN@github.com/...` quando `repo.is_private = true`, lendo token via `IGitHubUserTokenStore.GetForUserAsync(repo.added_by_user_id)`.
+
+### E.3 Por que OAuth user-token e não GitHub App
+
+| Critério | OAuth user-token (escolhido) | GitHub App (descartado V1.0) |
+|----------|------------------------------|------------------------------|
+| Reuso de código | Reusa `IGitHubOAuthClient` (Sprint 2). Adiciona apenas um novo `IGitHubOrgsClient`. | Stack inteiro novo: JWT signing com private key, `installations` API, webhook secret rotation. Zero reuso. |
+| Caso de uso | "User logado vê os repos **dele**." Token de user é a primitiva certa. | "Agente CI da org Lintty escaneia repo da org cliente sem user humano envolvido." Não é o caso V1.0. |
+| Granularidade | Scope é binário (`repo` = todos os privados que o user tem acesso). | Por instalação (a org instala o app e escolhe quais repos expor). Mais limpo, mas **over-engineering** para o tamanho do problema V1.0. |
+| Privacy | Token cifrado at-rest + revogável pelo user via GitHub Settings. | Mesma postura (instalação revogável), mas exige operar private key e webhook receiver. |
+| UX inicial | Click "Connect GitHub" → autorize → pronto. | Click "Install app" → escolher org no GitHub → escolher repos → callback. Mais cliques, mais fricção. |
+
+**Caminho para V1.1 preservado em §E.10.** Se piloto pagante exigir granularidade por instalação ou auditoria de webhook events, abre o segundo caminho (coexistência, não substituição).
+
+### E.4 Scopes novos pedidos — `repo` + `read:org`
+
+**`read:org`** — necessário para `GET /user/orgs` listar orgs onde user é membro.
+
+**`repo`** — necessário para listar e clonar repos privados. Aqui é preciso ser honesto:
+
+> No OAuth clássico do GitHub, **`repo` é "Full control of private repositories"**. Não existe granularidade `repo:read` para repos privados. Esse é exatamente o trade-off contra GitHub App (que tem permissões granulares por recurso). Pedimos um scope mais amplo do que o uso real exige.
+
+**Compensação contratual (vai pra Política de Privacidade — §E.8):**
+
+- **Lintty nunca escreve no repo do cliente.** Não há código no produto que chame `POST/PATCH/PUT` em endpoints `repos/*` que mutem estado. `IGitHubOrgsClient` expõe **apenas** métodos de leitura.
+- **Uso exclusivo do scope:** (a) listar orgs/repos para a UI de importação; (b) clone shallow read-only durante `GitCliClient.Clone`. Nada mais.
+- **Clone é efêmero (princípio #5 do system prompt):** descartado em ≤60s pós-scan. Token nunca é gravado no disco do worker (passa por env var no subprocess `git`, escopo do processo).
+- **User pode revogar a qualquer momento** via `DELETE /api/auth/github/connect` (endpoint novo, §E.3) ou direto em `https://github.com/settings/applications`.
+
+### E.5 Fluxo separado `connect` — não polui o login
+
+Login e connect são **flows distintos** com scopes distintos. Login mantém §3.6 original (scopes mínimos). Connect é opt-in explícito.
+
+```
+                                 ┌──────────────────────────────────┐
+                                 │ Browser (user logado no dash)    │
+                                 │ click "Conectar GitHub"          │
+                                 └────────────────┬─────────────────┘
+                                                  │
+                                                  ▼
+                          GET /api/auth/github/connect/start
+                          (cookie de sessão Lintty obrigatório)
+                                                  │
+                                                  ▼
+                           302 → github.com/login/oauth/authorize
+                                  ?client_id=...
+                                  &scope=repo,read:org              ◄── ELEVADO
+                                  &state=<HMAC csrf>
+                                  &redirect_uri=.../connect/callback
+                                                  │
+                                                  ▼
+                          User aprova prompt (vê scopes elevados)
+                                                  │
+                                                  ▼
+                          GET /api/auth/github/connect/callback
+                                  ?code=...&state=...
+                                                  │
+                                                  ▼
+                          IGitHubOAuthClient.ExchangeCodeForTokenAsync
+                          (reuso do Sprint 2; mesmo client, nova chamada)
+                                                  │
+                                                  ▼
+                          IDataProtector.Protect(token)
+                          INSERT INTO github_user_tokens
+                                  (user_id, encrypted_token, scopes, granted_at)
+                                                  │
+                                                  ▼
+                          IGitHubOrgsClient.ListOrgsAsync(token)
+                          UPSERT em github_orgs(user_id, github_org_id, ...)
+                                                  │
+                                                  ▼
+                                  302 → /dashboard?connected=1
+```
+
+**Quem precisa fazer o connect:**
+
+- User que se cadastrou via OAuth GitHub no flow original (§3.6) já tem `external_logins(provider='github')`. Click em "Connect" dispara o flow connect e **ganha um upgrade de scopes** — o token elevado é gravado em `github_user_tokens`. O token mínimo do login original nunca foi persistido (§3.6 dizia `token descartado`); este é o primeiro token persistido para esse user.
+- User que se cadastrou por email+senha precisa fazer o connect uma vez para ganhar o token. UX: botão grande no dashboard "Conecte GitHub para importar repos privados".
+
+**Endpoints novos (PR 6 do Sprint 3 redesenhado):**
+
+| Método | Rota | Comportamento |
+|--------|------|---------------|
+| `GET` | `/api/auth/github/connect/start` | Redireciona para GitHub authorize com scope elevado. Cookie Lintty obrigatório (`401` se anônimo). |
+| `GET` | `/api/auth/github/connect/callback` | Troca code, salva token cifrado, popula `github_orgs`. Redireciona para `/dashboard?connected=1`. |
+| `DELETE` | `/api/auth/github/connect` | Marca `revoked_at = now()` no `github_user_tokens` do user logado. **Não tenta revogar no GitHub** (user faz isso direto se quiser); só para de usar nosso lado. Retorna `204`. |
+| `GET` | `/api/github/orgs` | Lista orgs conectadas do user (lê de `github_orgs` cache; refresca via API se `connected_at` > 1h). |
+| `GET` | `/api/github/orgs/{org_login}/repos` | Lista repos da org (paginação GitHub passada through). Inclui privados. |
+
+`/api/auth/github/start` e `/api/auth/github/callback` (login original, scopes mínimos) **não mudam**.
+
+### E.6 Storage do token — `github_user_tokens` + `IDataProtector`
+
+```sql
+CREATE TABLE github_user_tokens (
+  user_id          bigint PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  encrypted_token  bytea       NOT NULL,    -- IDataProtector.Protect(plaintext_token)
+  scopes           text[]      NOT NULL,    -- ['repo','read:org','read:user','user:email']
+  granted_at       timestamptz NOT NULL DEFAULT now(),
+  last_used_at     timestamptz,             -- atualizado a cada chamada GitHub
+  revoked_at       timestamptz              -- nullable; marca soft-revoke local
+);
+CREATE INDEX idx_github_user_tokens_active ON github_user_tokens (user_id) WHERE revoked_at IS NULL;
+```
+
+**`encrypted_token` cifrado via `IDataProtector`** com purpose `"github-user-token"`:
+
+```csharp
+var protector = _dataProtectionProvider.CreateProtector("github-user-token");
+var encrypted = protector.Protect(Encoding.UTF8.GetBytes(plainToken));
+// salva em encrypted_token (bytea)
+```
+
+**Configuração das chaves DataProtection (V1.0):**
+
+- Chaves persistidas em disco em `var/lintty/data-protection/` (mesma raiz do `JobStorageOptions.Root`).
+- `services.AddDataProtection().PersistKeysToFileSystem(new DirectoryInfo(...)).SetApplicationName("Lintty.WebInspector");`
+- **`SetApplicationName` é obrigatório** — sem isso, deploy entre processos com nomes de assembly diferentes invalida tokens cifrados.
+- **Disclaimer V1.0:** chaves em arquivo são suficientes para single-instance VM/Cloud Run-com-volume. Não cobrem rotação automática nem recuperação de instância perdida. Em V1.1 com deploy real multi-instance, considerar **Azure Key Vault** ou **GCP KMS** como key wrapper (`ProtectKeysWithAzureKeyVault` / `ProtectKeysWithGoogleCloudKms`). Decisão preservada para `[backend-dev-cloud]` em ADR 0008.
+
+**Operações expostas via `IGitHubUserTokenStore`:**
+
+```csharp
+public interface IGitHubUserTokenStore
+{
+    Task SaveAsync(long userId, string plainToken, IReadOnlyList<string> scopes, CancellationToken ct);
+    Task<string?> GetForUserAsync(long userId, CancellationToken ct);   // null se revoked_at != null ou row inexistente
+    Task<TokenMetadata?> GetMetadataAsync(long userId, CancellationToken ct);  // sem decifrar token
+    Task RevokeAsync(long userId, CancellationToken ct);                       // SET revoked_at = now()
+    Task TouchLastUsedAsync(long userId, CancellationToken ct);                // best-effort, fire-and-forget
+}
+```
+
+`GetForUserAsync` é o ponto de leitura único. Se retornar `null`, qualquer caller (clone privado, listagem de orgs) levanta erro estruturado `GITHUB_TOKEN_REVOKED` para o usuário re-fazer connect.
+
+### E.7 Modelo de `github_orgs` — vínculo é user-level, não Lintty-org-level
+
+**Decisão crítica:** o token é do **user**, não da Lintty-org. Por isso o vínculo de "qual org GitHub está conectada" também é per-user.
+
+Cenário: Lintty-org `Acme` tem dois membros — `alice` e `bob`. Alice conectou sua conta GitHub e tem acesso à org GitHub `acme-corp`. Bob ainda não conectou. Bob **não vê** os repos de `acme-corp` no dashboard do `Acme` enquanto não fizer seu próprio connect (pode ser que Bob nem seja membro de `acme-corp` no GitHub). Quando Bob conecta, ele vê os repos GitHub que **a conta GitHub do Bob** tem acesso — pode ser um superset, subset ou completamente outro conjunto comparado ao da Alice.
+
+Esse é o modelo correto pelo princípio de **least privilege** + **separation of identity**: Lintty não inventa "permissões delegadas" entre membros da Lintty-org. Cada user tem seu próprio token GitHub, sua própria visão.
+
+```sql
+CREATE TABLE github_orgs (
+  id                    bigserial PRIMARY KEY,
+  user_id               bigint      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  github_org_id         bigint      NOT NULL,            -- id numérico do GitHub
+  github_org_login      text        NOT NULL,            -- 'acme-corp'
+  github_org_avatar_url text,
+  connected_at          timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (user_id, github_org_id)
+);
+CREATE INDEX idx_github_orgs_user ON github_orgs (user_id);
+```
+
+**Refresh policy:** `connected_at` é touched no upsert do callback connect e periodicamente quando `IGitHubOrgsClient.ListOrgsAsync` é chamado (TTL 1h: lê do cache se fresh, senão refaz `GET /user/orgs` e atualiza). Sem worker dedicado de refresh em V1.0.
+
+### E.8 `repos` — campos adicionados, compat com manual
+
+`repos` definido em §3.2 ganha 4 campos opcionais:
+
+```sql
+ALTER TABLE repos
+  ADD COLUMN github_repo_id   bigint,
+  ADD COLUMN github_org_login text,
+  ADD COLUMN default_branch   text,
+  ADD COLUMN is_private        boolean NOT NULL DEFAULT false;
+
+CREATE UNIQUE INDEX uq_repos_github_id
+  ON repos (org_id, github_repo_id) WHERE github_repo_id IS NOT NULL;
+```
+
+**Convenção:**
+
+- Repos importados via flow de org (`POST /api/orgs/{lintty_org}/repos/import { github_org_login, github_repo_id }`): todos os 4 campos preenchidos. `github_url` é derivado dos campos GitHub.
+- Repos adicionados manualmente via `POST /api/repos { github_url }` (flow §3.2 original): `github_repo_id`/`github_org_login`/`default_branch` ficam `NULL`, `is_private` default `false`. Se o user quiser scan privado por essa rota, falha cedo com mensagem orientando a usar o flow de org.
+
+**Migração:** `ALTER TABLE` aditivo, zero impacto em repos já cadastrados (todos ficam `is_private=false`, GitHub fields `NULL`). Migration `AddGithubFieldsToRepos` é trivial.
+
+### E.9 Clone de repo privado — `GitCliClient` injeta token
+
+`GitCliClient` (`engine/src/Lintty.WebInspector/Jobs/GitCliClient.cs`) hoje faz clone shallow anônimo. A mudança é localizada:
+
+```csharp
+public async Task CloneAsync(CloneRequest req, CancellationToken ct)
+{
+    string url = req.GithubUrl;
+    if (req.IsPrivate)
+    {
+        var token = await _tokenStore.GetForUserAsync(req.AddedByUserId, ct)
+            ?? throw new ScanFailedException(
+                code: "GITHUB_TOKEN_REVOKED",
+                message: $"User {req.AddedByUserId} sem token GitHub válido. Pedir reconnect.");
+        url = InjectToken(req.GithubUrl, token);   // https://x-access-token:TOKEN@github.com/owner/repo.git
+        _ = _tokenStore.TouchLastUsedAsync(req.AddedByUserId, ct);  // fire-and-forget
+    }
+    // ... mesmo fluxo de git clone --depth=1 daqui pra frente
+}
+```
+
+**Contratos de segurança:**
+
+1. **Clone é feito como o user que adicionou o repo, não como a Lintty-org.** `repo.added_by_user_id` é a fonte. Se Alice adicionou o repo privado e depois saiu da Lintty-org, scans futuros precisam reapontar `added_by_user_id` ou falhar — **decisão V1.0: falham**, owner da Lintty-org deve readicionar o repo. Sem fallback automático para outro membro (preserva separation-of-identity de §E.7).
+2. **Token não vaza para logs.** `InjectToken` retorna URL com token; o resto do processo recebe a URL como argumento de `git clone`. **Argumentos do `git` não são logados** (`EngineSubprocessRunner` já tem mask de URL no log V0; estende a mask para cobrir `x-access-token:`).
+3. **Token não vaza pro filesystem do worker.** `git clone` consome a URL e não persiste em `.git/config` do clone (sem `git remote set-url`). O clone é descartado em ≤60s (princípio #5).
+4. **Erro estruturado se revogado.** `GITHUB_TOKEN_REVOKED` é um `error_code` novo em `scans.error_code` (varchar(32) já existe em §3.2). Frontend traduz para "Sua conexão com GitHub expirou. [Reconectar]".
+
+**Teste obrigatório (PR 7 do Sprint 3 redesenhado):** `WorkerIntegrationTests.PrivateRepo_TokenRevoked_FailsWithStructuredError` — fixture `FakeGitCliClient` simula 401 do GitHub no clone, asserta `scan.status='failed'` + `scan.error_code='GITHUB_TOKEN_REVOKED'`.
+
+### E.10 Atualização de privacidade — pendência LGPD
+
+A postura "token GitHub do usuário descartado após o callback" do §3.6 era um compromisso público (implícito na promessa "código não sai do equipamento" e em texto de `landing/privacidade.html`). A nova postura precisa estar refletida em **`docs/compliance/privacy-policy.md`** antes da Política ser republicada.
+
+**Texto sugerido (meia frase, [security-compliance] revisa e refina):**
+
+> "Lintty armazena, criptografado at-rest, o token OAuth do usuário que opta por conectar sua conta GitHub via 'Conectar GitHub' no dashboard. O token é usado exclusivamente para (a) listar organizações e repositórios autorizados e (b) clonagem read-only durante a execução do scan. O usuário pode revogar a qualquer momento via `DELETE /api/auth/github/connect` no app ou diretamente em github.com/settings/applications. O clone é efêmero (descartado em ≤60s) e o token nunca é gravado no disco do worker."
+
+**Sinalização explícita:** `[security-compliance]` precisa revisar este apêndice **antes** da Política de Privacidade ser republicada para o piloto. Pendência adicionada à tabela §6.
+
+### E.11 Caminho para GitHub App em V1.1
+
+**Gatilho de migração:** primeiro piloto pagante exigir um dos seguintes:
+
+- Permissão escopada por instalação (org cliente quer dizer "Lintty pode acessar **só** estes 3 repos, não todos os privados do user que conectou").
+- Auditoria de webhook events (org cliente quer ver no log do GitHub "Lintty App fez X em Y às Z").
+- Operação sem user humano permanente (CI da Lintty-org dispara scan agendado mesmo se o user que conectou ficou offline / saiu da empresa).
+
+**Estratégia de coexistência (não substituição):**
+
+- Novo `IGitHubInstallationClient` em paralelo ao `IGitHubOrgsClient` atual.
+- Nova tabela `github_installations` paralela a `github_orgs` — vincula Lintty-org → installation_id (não user → installation_id, porque GitHub App é por instalação, não por user).
+- Lintty-org no V1.1 pode operar em **dois modos**:
+  - **Modo OAuth user-token** (V1.0, este apêndice): cada user conecta sua conta, vê seus repos.
+  - **Modo GitHub App** (V1.1): owner da Lintty-org instala o Lintty App em uma org GitHub específica; todos os membros da Lintty-org veem os repos cobertos pela instalação.
+- UI: toggle no `/dashboard/integrations` "Modo de conexão: [User OAuth | GitHub App]". Default user OAuth para retrocompat.
+- **Migração de tokens existentes:** zero. Token user-OAuth fica conviver com installation token; user pode revogar e a Lintty-org passa a usar só o App.
+- **Código novo se isola** em `Lintty.WebInspector/GitHubApp/` (novo namespace), zero contaminação no `Auth/` atual.
+
+ADR 0009 (futura) cobre. Não construir antes do gatilho.
+
+### E.12 Testes esperados (PR 7 do Sprint 3 redesenhado)
+
+`[qa-engineer]` — gates obrigatórios deste sub-slice:
+
+```text
+GitHubOrgsClientTests
+  ListOrgs_HappyPath_ReturnsAllOrgs                         (fixture: 2 orgs)
+  ListReposForOrg_HappyPath_IncludesPrivate                 (fixture: 1 público + 1 privado)
+  ListReposForOrg_TokenRevoked_Throws_GithubTokenRevoked    (401 do GitHub)
+
+GitHubUserTokenStoreTests
+  Save_Then_Get_RoundTrip                                   (cifra/decifra)
+  Save_OverwriteExistingRow_KeepsLatestScopes
+  Revoke_Then_Get_ReturnsNull
+  Get_NonExistentUser_ReturnsNull
+
+ConnectFlowTests
+  Connect_AnonymousUser_Returns_401
+  Connect_LoggedInUser_Redirects_To_Github_With_Elevated_Scopes
+  Connect_Callback_Stores_Token_Encrypted_And_Populates_Orgs
+  Connect_Callback_StateInvalid_Returns_400
+  Disconnect_Sets_RevokedAt
+
+PrivateClonePolicyTests
+  PrivateRepo_TokenRevoked_FailsWithStructuredError         (error_code='GITHUB_TOKEN_REVOKED')
+  PrivateRepo_TokenValid_ClonesSuccessfully                 (FakeGitCli verifica que URL recebida tem 'x-access-token:')
+  PrivateRepo_AddedByUser_NotMemberAnymore_FailsClearly     (added_by_user_id sem token → falha)
+
+TenantIsolationGithubTests
+  UserA_Connects_OrgX_UserB_SameLintty­Org_DoesNotSee_OrgX_Repos
+    (token é per-user; UserB precisa fazer connect próprio)
+  UserA_Imports_PrivateRepo_To_LinttyOrg_UserB_CanTriggerScan_OnlyIfUserA_StillHasToken
+    (clone usa added_by_user_id, não triggered_by_user_id)
+```
+
+Fixture `FakeGitHubOrgsClient` com 2 orgs (`acme-corp`, `personal`) e 4 repos (2 públicos, 2 privados, mistos entre orgs). `[qa-engineer]` define localização exata dos fixtures (provavelmente `engine/tests/Lintty.WebInspector.Tests/Fixtures/GitHubOrgs/`).
+
+### E.13 Pendências e riscos abertos
+
+| # | Item | Bloqueia o quê | Responsável | Quando endereçar |
+|---|------|----------------|-------------|------------------|
+| E1 | **DataProtection key rotation strategy V1.1.** Chaves em arquivo não rotacionam automático; perda da pasta = todos os tokens cifrados viram inúteis (user reconnecta, mas é fricção). | Deploy real multi-instance + recuperação de instância. | `[backend-dev-cloud]` em ADR 0008 | Sprint 6 / pré-piloto pagante. |
+| E2 | **Healthcheck de token revogado silenciosamente.** GitHub revoga tokens em condições não-óbvias (user trocou senha, app removido das authorized OAuth apps, scope policy da org mudou). Sem healthcheck, descobrimos só na hora do scan falhar. **Proposta:** worker periódico (a cada 24h) que pinga `GET /user` com cada token ativo; se 401, marca `revoked_at`. Custo: 1 chamada/user/dia, rate limit GitHub é 5000/h por token, não chega perto. | UX previsível ("seu token expirou, reconecte" antes de scan falhar). | `[backend-dev-dotnet]` | V1.0 aceitável sem (falha cedo no scan); V1.1 pré-piloto pagante. |
+| E3 | **Política de Privacidade atualizada** (§E.10). | Republicação da Política antes do piloto. | `[security-compliance]` | Pendência #1 da §6 cobre; este item especifica o delta. |
+| E4 | **Logs do `EngineSubprocessRunner` mascarando `x-access-token:`.** Mask V0 cobre `github.com/owner/repo`; precisa estender para `x-access-token:TOKEN@github.com/...`. | Token não vazar em logs. | `[backend-dev-dotnet]` no PR 7 | Sprint 3. |
+| E5 | **`SaveAsync` em race com `Connect` simultâneo do mesmo user (duas abas).** PK `user_id` força segundo upsert a `ON CONFLICT DO UPDATE` — comportamento aceitável (último connect vence). Documentar. | Sem race condition causando token órfão. | `[backend-dev-dotnet]` | PR 6, comentário no `IGitHubUserTokenStore.SaveAsync`. |
+| E6 | **TTL de cache de orgs/repos.** §E.7 diz 1h, mas valor real depende de UX ("clica refresh se acabou de criar repo no GitHub e não aparece"). | UX consistente. | `[product-owner]` | Pode entrar como toggle em `appsettings.json` em PR 6; valor default 1h aceitável. |
+| E7 | **Escopo `repo` é "Full control".** Risco residual aceito (compensado por §E.4). Se algum piloto pedir "queremos GitHub App granular", aciona §E.11. | Compliance review formal pré-piloto pagante. | `[security-compliance]` | Antes de Sprint 5 / piloto pagante. |
+
+### E.14 Resumo (≤120 palavras)
+
+§3.6 reaberto em 2026-05-07. Login original (`/api/auth/github/start`) preserva scopes mínimos do §3.6. **Novo flow `connect`** (`/api/auth/github/connect/*`) é opt-in, pede `repo` + `read:org`, persiste token cifrado at-rest via `IDataProtector` em `github_user_tokens`. `github_orgs` vincula **user → org GitHub** (token é per-user, não per-Lintty-org). `repos` ganha campos opcionais (`is_private`, `github_repo_id`, etc) compat com adição manual. `GitCliClient` injeta `x-access-token:TOKEN@github.com/...` apenas quando `repo.is_private = true`, lendo via `IGitHubUserTokenStore`. GitHub App descartado V1.0 (over-engineering); coexistência preservada para V1.1 se piloto pagante exigir granularidade. Política de Privacidade precisa atualização — pendência aberta para `[security-compliance]`.
