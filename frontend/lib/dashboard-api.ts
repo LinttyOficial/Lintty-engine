@@ -89,12 +89,16 @@ export function listRepoScans(
 }
 
 /**
- * Hard cap on how many targets a single trigger expands into. Mirrors
- * `ScanService.MaxTargetsPerTrigger` server-side; surfaced here so the
- * picker can block submission with a friendly inline message instead of
- * relying on the 400. Bump in lock-step if the backend ever raises it.
+ * Client-side mirror of the backend's `scan-target` cap (see
+ * `RepoPreflightService.MaxScanProjects` in the engine). Used by the
+ * picker to block submission inline before the 400 round-trip; bump
+ * in lock-step if the backend ever raises it.
+ *
+ * Note: this only governs how many entries the user can save under a
+ * repo's `scan_projects`. The trigger endpoint accepts that saved list
+ * as-is and produces a single combined PDF (PR S3).
  */
-export const MAX_TARGETS_PER_TRIGGER = 50;
+export const MAX_SCAN_PROJECTS = 50;
 
 // ── Repo Preflight (Sprint 3 PR S1f) ─────────────────────────────────────
 
@@ -166,15 +170,14 @@ export function getRepoPreflight(
  * Persist the user's curated scan target. Empty list clears the saved
  * selection and returns the repo to auto-detect.
  *
- * PR S2 relaxed the backend validation: any combination of `.sln` +
- * `.csproj` paths is accepted (each entry becomes one independent scan
- * at trigger time). Yaml entries are still rejected with
- * `invalid_scan_projects` because the engine resolver fails on yamls
- * without a `projects:` block. Hard cap of 50 entries per request.
+ * Valid combinations (engine constraint, see `RepoPreflightService`):
+ *   - empty (clears)
+ *   - 1 `.sln`
+ *   - 1+ `.csproj` (combined into a runtime `lintty.yml` at scan time)
+ * Invalid: 2+ slns, sln+csproj mix, yaml entries. Cap 50 entries.
  *
- * Returns 204 on success (envelope `{ ok: true, body: null }`),
- * 400 with an `{ error, message }` body on combination errors, 404 on
- * cross-tenant.
+ * Returns 204 on success, 400 with `{ error, message }` on combination
+ * errors, 404 on cross-tenant.
  */
 export function setRepoScanTarget(
   repoId: number,
@@ -223,10 +226,6 @@ export interface ScanSummary {
   error: string | null;
   triggeredByUserId: number;
   repo: ScanRepoSummary;
-  /** Repo-relative path of the scan target this run analysed (e.g.
-   *  `src/Foo/Foo.csproj`). Null when the trigger fell back to
-   *  auto-detect (no `targets`, no saved `scan_projects`). */
-  target: string | null;
 }
 
 /**
@@ -240,34 +239,12 @@ export interface ScanTriggerRequest {
   repoId: number;
   /** Optional branch / tag / sha. Null = use repo default branch. */
   ref?: string | null;
-  /**
-   * Optional per-request override for the targets to expand into scans.
-   * Each entry becomes one independent scan (N targets = N PDFs).
-   *
-   * Resolution order (server-side, see `ScanService.cs`):
-   *   1. `targets` non-empty → use as-is.
-   *   2. `targets` null/empty → fall back to the repo's saved
-   *      `scan_projects` (set via {@link setRepoScanTarget}).
-   *   3. Both empty → 1 auto-detect scan.
-   *
-   * Hard cap of 50 entries per trigger.
-   */
-  targets?: string[] | null;
-}
-
-/**
- * Response of {@link triggerScan}. PR S2 unified the single- and
- * multi-target flows: callers always receive an array (length 1 for the
- * common case, length N when expanding multiple targets).
- */
-export interface BatchTriggerResponse {
-  publicIds: string[];
 }
 
 export function triggerScan(
   req: ScanTriggerRequest,
-): Promise<ApiResponse<BatchTriggerResponse>> {
-  return apiFetch<BatchTriggerResponse>("/api/scans", {
+): Promise<ApiResponse<ScanDetail>> {
+  return apiFetch<ScanDetail>("/api/scans", {
     method: "POST",
     body: JSON.stringify(req),
   });
