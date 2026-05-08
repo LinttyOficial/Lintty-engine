@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.IO;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Threading;
 using AspNet.Security.OAuth.GitHub;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -388,6 +389,55 @@ public class Program
             var fileProvider = new PhysicalFileProvider(landingRoot);
             app.UseDefaultFiles(new DefaultFilesOptions { FileProvider = fileProvider });
             app.UseStaticFiles(new StaticFileOptions { FileProvider = fileProvider });
+
+            // ── SPA dynamic-segment fallback (Sprint 3 PR F5/F6) ────────────
+            // Next.js with output:"export" emits placeholder index.html for
+            // dynamic segments at out/dashboard/repos/_/index.html and
+            // out/dashboard/scans/_/index.html. The real ids only exist
+            // client-side (window.location), so requests like
+            // /dashboard/repos/42 or /dashboard/scans/<uuid> have no exact
+            // file on disk and UseStaticFiles 404s. Cloudflare Pages has an
+            // implicit SPA fallback in prod; this dotnet host doesn't.
+            //
+            // Scoped narrowly: regex matches a single segment after
+            // /dashboard/repos or /dashboard/scans (with optional trailing
+            // slash) and nothing deeper, so /api/* and any unrelated path
+            // remain untouched. Defense in depth: if a real file ever lands
+            // at the requested path, UseStaticFiles above already served it
+            // and this middleware never runs.
+            var dashboardReposRe = new Regex(@"^/dashboard/repos/[^/]+/?$",
+                RegexOptions.Compiled | RegexOptions.CultureInvariant);
+            var dashboardScansRe = new Regex(@"^/dashboard/scans/[^/]+/?$",
+                RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+            app.MapWhen(
+                ctx =>
+                {
+                    var path = ctx.Request.Path.Value;
+                    if (string.IsNullOrEmpty(path)) return false;
+                    return dashboardReposRe.IsMatch(path) || dashboardScansRe.IsMatch(path);
+                },
+                branch => branch.Run(async ctx =>
+                {
+                    var path = ctx.Request.Path.Value!;
+                    var placeholder = path.StartsWith("/dashboard/repos/", StringComparison.Ordinal)
+                        ? "dashboard/repos/_/index.html"
+                        : "dashboard/scans/_/index.html";
+                    var filePath = Path.Combine(
+                        landingRoot,
+                        placeholder.Replace('/', Path.DirectorySeparatorChar));
+                    if (!File.Exists(filePath))
+                    {
+                        ctx.Response.StatusCode = 404;
+                        return;
+                    }
+                    ctx.Response.ContentType = "text/html; charset=utf-8";
+                    // The placeholder is identical for every id; caching it
+                    // under a specific URL would pin a stale build manifest
+                    // when Next bumps hashes. The SPA itself is tiny.
+                    ctx.Response.Headers["Cache-Control"] = "no-store";
+                    await ctx.Response.SendFileAsync(filePath);
+                }));
         }
 
         // ── Auth pipeline ───────────────────────────────────────────────────
