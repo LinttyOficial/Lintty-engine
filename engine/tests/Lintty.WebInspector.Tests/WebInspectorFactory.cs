@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Lintty.WebInspector;
 using Lintty.WebInspector.Auth;
+using Lintty.WebInspector.Canon;
 using Lintty.WebInspector.Jobs;
 using Lintty.WebInspector.Validation;
 using Lintty.WebInspector.Tests.Fakes;
@@ -49,6 +50,25 @@ public sealed class WebInspectorFactory : WebApplicationFactory<Program>
     /// lets the worker run).
     /// </summary>
     public IGitClient? GitClientOverride { get; set; }
+
+    /// <summary>
+    /// Optional decorator-style override for <see cref="IEngineRunner"/>.
+    /// Receives the real <see cref="EngineSubprocessRunner"/> resolved from
+    /// the host's DI graph and returns a wrapper. Used by PR 5's
+    /// <c>WorkerIntegrationTests.DashboardScan_PinnedCanon_Survives_NewCanon</c>
+    /// to capture the arguments the worker hands to the engine — the
+    /// snapshotted <c>--canon-version</c> in particular.
+    /// </summary>
+    public Func<IEngineRunner, IEngineRunner>? EngineRunnerDecorator { get; set; }
+
+    /// <summary>
+    /// Optional override for <see cref="ICanonVersionProvider"/>. PR 5's
+    /// canon-snapshot regression swaps in
+    /// <see cref="Fakes.ScriptedCanonVersionProvider"/> so it can flip the
+    /// "current canon" between trigger and worker pickup and prove the
+    /// scan row's <c>canon_version</c> column survives the bump (§3.7).
+    /// </summary>
+    public ICanonVersionProvider? CanonVersionProviderOverride { get; set; }
 
     /// <summary>
     /// When true, the <see cref="JobWorker"/> background service is removed
@@ -116,6 +136,27 @@ public sealed class WebInspectorFactory : WebApplicationFactory<Program>
             {
                 RemoveAll<IGitClient>(services);
                 services.AddSingleton(GitClientOverride);
+            }
+
+            if (CanonVersionProviderOverride is not null)
+            {
+                RemoveAll<ICanonVersionProvider>(services);
+                services.AddSingleton(CanonVersionProviderOverride);
+            }
+
+            if (EngineRunnerDecorator is not null)
+            {
+                // Replace the singleton IEngineRunner with a factory that
+                // builds the real EngineSubprocessRunner and wraps it via
+                // the test-supplied decorator. We rebuild the inner via
+                // ActivatorUtilities so it picks up IOptions/ILogger from
+                // the host DI graph — same wiring Program.cs uses.
+                RemoveAll<IEngineRunner>(services);
+                services.AddSingleton<IEngineRunner>(sp =>
+                {
+                    var inner = ActivatorUtilities.CreateInstance<EngineSubprocessRunner>(sp);
+                    return EngineRunnerDecorator(inner);
+                });
             }
 
             if (DisableWorker)

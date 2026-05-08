@@ -1,14 +1,21 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Net.Http;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Lintty.WebInspector.Canon;
 using Lintty.WebInspector.Jobs;
+using Lintty.WebInspector.Persistence;
+using Lintty.WebInspector.Persistence.Entities;
+using Lintty.WebInspector.Scans;
 using Lintty.WebInspector.Tests.Fakes;
 using Xunit;
 
@@ -174,6 +181,312 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
         Assert.Equal(JobErrorCode.AmbiguousTarget, errorCode);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // ADR 0007 Sprint 3 / PR 5 — dashboard-bound integration suite.
+    //
+    // The V0 tests above (Saint_*, Sinner_*, SaintNoSln_*, Foreigner_*) prove
+    // the worker's V0 anonymous path is byte-identical to a CLI direct call.
+    // The two tests below prove the same invariant for the org-bound dashboard
+    // path (POST /api/scans → JobWorker.RunScanAsync → IArtifactStore) and the
+    // canon-snapshot regression from §3.7.
+    //
+    // Why same file. The cross-determinism gate is one product invariant with
+    // two callers (anon /api/jobs and authed /api/scans) — keeping all four
+    // assertions adjacent makes regressions easy to triage. Drift in one will
+    // surface against the other in the same `dotnet test` run.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// ADR 0007 §3.7 cross-determinism gate for the org-bound flow:
+    /// <c>POST /api/scans</c> against the Saint fixture must produce a
+    /// <c>laudo.pdf</c> byte-identical to <c>lintty-engine analyze</c>
+    /// run locally on the same .sln. Same engine, same canon, same PDF
+    /// — the entire dashboard pitch.
+    ///
+    /// <para>
+    /// <b>Why this is the gate of Sprint 3.</b> The V0 anonymous flow
+    /// already passes this gate (<see cref="Saint_Runs_End_To_End_And_Pdf_Matches_Cli_Direct_Invocation"/>);
+    /// the org-bound flow could in principle diverge if anything in the
+    /// new code path (canon snapshot, IArtifactStore reservation, the
+    /// scans Dapper queue) accidentally changed what the engine sees. If
+    /// this test ever goes red, do NOT relax the assertion — investigate
+    /// whether a timestamp, request id, host metadata, or font fallback
+    /// crept into the path.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task DashboardScan_Saint_Pdf_Equals_CliDirect()
+    {
+        await ResetAsync();
+        Assert.True(Directory.Exists(TestPaths.SaintFixture),
+            $"Saint fixture missing: {TestPaths.SaintFixture}");
+        Assert.True(File.Exists(TestPaths.EngineCliDll),
+            $"Engine CLI dll missing at {TestPaths.EngineCliDll} — build Lintty.Engine.Cli first.");
+
+        // ── 1. Spin up the host with the worker enabled and the git client
+        //      pointed at the local Saint fixture. The default canon provider
+        //      (DefaultCanonVersionProvider, "1.0.0") matches Saint/lintty.yml,
+        //      so the snapshotted canon and the yml-derived canon agree —
+        //      cross-determinism does not require an explicit override here.
+        await using var factory = CreateFactory();
+        factory.DisableWorker = false;
+        factory.GitClientOverride = new FixtureCopyGitClient(TestPaths.SaintFixture);
+        var (client, orgId, userId) = await SignUpAndGetAuthedClientAsync(
+            factory, "scan-determinism@example.com", "Determinism Co");
+
+        // ── 2. Register the repo and trigger a scan via the service. We use
+        //      the service (not the HTTP endpoint) so the test focuses on the
+        //      worker → engine path; the endpoint contract is exercised in
+        //      ScansEndpointsTests.Post_Returns_201_And_Persists_Queued_*.
+        var add = await client.PostAsJsonAsync("/api/repos", new
+        {
+            githubUrl = "https://github.com/lintty-demo/the-saint",
+        });
+        add.EnsureSuccessStatusCode();
+        using var addDoc = JsonDocument.Parse(await add.Content.ReadAsStringAsync());
+        var repoId = addDoc.RootElement.GetProperty("id").GetInt64();
+
+        Guid publicId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, gitRef: null, CancellationToken.None);
+            Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
+            publicId = trigger.Scan!.PublicId;
+        }
+
+        // ── 3. Wait for the worker to drain the queue. Poll the DB directly
+        //      (cheaper than a cookie'd HTTP round-trip per tick, and the
+        //      cookie path has its own coverage). Generous deadline because
+        //      the engine CLI does a real MSBuild restore on first run.
+        var completed = await WaitForScanStatusAsync(
+            factory, publicId, ScanStatus.Completed, TimeSpan.FromMinutes(3));
+        Assert.NotNull(completed);
+        Assert.Equal(ScanStatus.Completed, completed!.Status);
+        Assert.False(string.IsNullOrEmpty(completed.HashContent),
+            "completed scan should have hash_content filled by the worker");
+
+        // ── 4. Pull the dashboard PDF via the authed endpoint — exercises
+        //      the same code path a real client would. Same bytes the worker
+        //      asked the engine to write into IArtifactStore.
+        var pdfResp = await client.GetAsync($"/api/scans/{publicId:D}/laudo.pdf");
+        pdfResp.EnsureSuccessStatusCode();
+        Assert.Equal("application/pdf", pdfResp.Content.Headers.ContentType?.MediaType);
+        var dashboardPdfBytes = await pdfResp.Content.ReadAsByteArrayAsync();
+        var dashboardPdfHash = Sha256Bytes(dashboardPdfBytes);
+
+        // Pull the JSON too — its sha256 is what hash_content stores. We use
+        // it as a sanity cross-check; the PDF byte equality is the headline.
+        var jsonResp = await client.GetAsync($"/api/scans/{publicId:D}/report.json");
+        jsonResp.EnsureSuccessStatusCode();
+        var dashboardJsonBytes = await jsonResp.Content.ReadAsByteArrayAsync();
+        var dashboardJsonHash = Sha256Bytes(dashboardJsonBytes);
+        Assert.Equal($"sha256:{dashboardJsonHash}", completed.HashContent);
+
+        // ── 5. Run the SAME CLI dll directly against the SAME .sln. We pass
+        //      `--canon-version 1.0.0` here to mirror the dashboard path
+        //      verbatim — the worker always passes it for org-bound scans
+        //      (EngineSubprocessRunner §3.7), so CLI direct must too for
+        //      the comparison to be apples-to-apples.
+        var directDir = Path.Combine(Path.GetTempPath(), $"lintty-direct-dashboard-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directDir);
+        try
+        {
+            var slnPath = Path.Combine(TestPaths.SaintFixture, "Saint.sln");
+            var directPdf = Path.Combine(directDir, "laudo.pdf");
+            var directJson = Path.Combine(directDir, "report.json");
+            var (exitCode, stderr) = RunEngineDirect(
+                slnPath, directPdf, directJson, canonVersion: "1.0.0");
+            Assert.True(exitCode is 0 or 1,
+                $"Direct CLI invocation failed with exit {exitCode}: {stderr}");
+            Assert.True(File.Exists(directPdf), "Direct CLI did not produce a PDF.");
+
+            var directPdfBytes = await File.ReadAllBytesAsync(directPdf);
+            var directPdfHash = Sha256Bytes(directPdfBytes);
+            var directJsonBytes = await File.ReadAllBytesAsync(directJson);
+            var directJsonHash = Sha256Bytes(directJsonBytes);
+
+            // ── 6. The gate. If this assert fails: read CLAUDE.md
+            //      "Determinism is a product invariant" and trace what
+            //      drifted. Do NOT relax the assertion.
+            Assert.True(
+                dashboardJsonHash == directJsonHash,
+                "Cross-determinism gate FAILED: report.json hash differs between dashboard and CLI direct on identical input.\n" +
+                $"  dashboard: {dashboardJsonHash}\n" +
+                $"  cli-direct: {directJsonHash}");
+            Assert.True(
+                dashboardPdfHash == directPdfHash,
+                "Cross-determinism gate FAILED (dashboard PDF differs from CLI direct on identical input).\n" +
+                $"  dashboard: {dashboardPdfHash}\n" +
+                $"  cli-direct: {directPdfHash}\n" +
+                $"  dashboard size: {dashboardPdfBytes.Length} B\n" +
+                $"  cli-direct size: {directPdfBytes.Length} B");
+        }
+        finally
+        {
+            try { Directory.Delete(directDir, recursive: true); }
+            catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>
+    /// ADR 0007 §3.7 canon-snapshot invariant: a scan queued today against
+    /// canon <c>1.0.0</c> must run with <c>1.0.0</c> even if the host's
+    /// "current canon" advances before the worker claims it. Otherwise a
+    /// canon bump silently re-grades queued scans, which kills determinism.
+    ///
+    /// <para>
+    /// <b>How this test simulates the bump.</b> A
+    /// <see cref="Fakes.ScriptedCanonVersionProvider"/> replaces the default
+    /// singleton. The test sets it to <c>1.0.0</c>, triggers the scan
+    /// (snapshotted onto the row), then flips the provider to <c>1.0.1</c>
+    /// before the worker picks the row up. The post-bump value never
+    /// reaches the engine because <see cref="ScanService.TriggerAsync"/>
+    /// reads the provider exactly once — at trigger time — and the worker
+    /// reads the snapshotted column from <c>scans</c>, not the provider.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>What we assert.</b>
+    /// <list type="number">
+    ///   <item><description>The scan row's <c>canon_version</c> stays
+    ///         <c>1.0.0</c> after the worker completes.</description></item>
+    ///   <item><description>The engine subprocess was invoked with
+    ///         <c>--canon-version 1.0.0</c>, captured via
+    ///         <see cref="Fakes.RecordingEngineRunner"/>.</description></item>
+    ///   <item><description>The generated <c>report.json</c> carries
+    ///         <c>canon_version: "1.0.0"</c> — the engine itself honored
+    ///         the snapshot, not the post-bump value.</description></item>
+    /// </list>
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task DashboardScan_PinnedCanon_Survives_NewCanon()
+    {
+        await ResetAsync();
+        Assert.True(Directory.Exists(TestPaths.SaintFixture),
+            $"Saint fixture missing: {TestPaths.SaintFixture}");
+
+        var scriptedCanon = new ScriptedCanonVersionProvider { Current = "1.0.0" };
+        // Out-parameter via a TaskCompletionSource-style holder. The decorator
+        // factory runs once during DI graph construction (the IEngineRunner is
+        // a singleton); we capture the constructed wrapper so the assertions
+        // below can read its Invocations.
+        RecordingEngineRunner? recordingRef = null;
+
+        await using var factory = CreateFactory();
+        factory.DisableWorker = false;
+        factory.GitClientOverride = new FixtureCopyGitClient(TestPaths.SaintFixture);
+        factory.CanonVersionProviderOverride = scriptedCanon;
+        factory.EngineRunnerDecorator = inner =>
+        {
+            var wrapper = new RecordingEngineRunner(inner);
+            recordingRef = wrapper;
+            return wrapper;
+        };
+
+        var (client, orgId, userId) = await SignUpAndGetAuthedClientAsync(
+            factory, "canon-snapshot@example.com", "Snapshot Co");
+
+        // Add a repo. FakeGitHubMetadataClient defaults are used — the URL
+        // never gets resolved against real GitHub.
+        var add = await client.PostAsJsonAsync("/api/repos", new
+        {
+            githubUrl = "https://github.com/lintty-demo/the-saint",
+        });
+        add.EnsureSuccessStatusCode();
+        using var addDoc = JsonDocument.Parse(await add.Content.ReadAsStringAsync());
+        var repoId = addDoc.RootElement.GetProperty("id").GetInt64();
+
+        // ── Trigger with provider returning 1.0.0; the row snapshots it.
+        Guid publicId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
+            var trigger = await scanService.TriggerAsync(
+                orgId, userId, repoId, gitRef: null, CancellationToken.None);
+            Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
+            publicId = trigger.Scan!.PublicId;
+            // Confirm the snapshot at trigger time is exactly what we set.
+            Assert.Equal("1.0.0", trigger.Scan!.CanonVersion);
+        }
+
+        // ── Simulate "the canon advanced". From this moment on, ANY new
+        //    trigger would snapshot 1.0.1 — but our row is already locked
+        //    to 1.0.0. The worker may or may not have picked the scan up
+        //    yet (poll interval is 100ms in tests); the flip is safe
+        //    either way because the worker reads from the row, not the
+        //    provider.
+        scriptedCanon.Current = "1.0.1";
+
+        // ── Wait for the worker to complete. Generous deadline — first
+        //    MSBuild restore is slow.
+        var completed = await WaitForScanStatusAsync(
+            factory, publicId, ScanStatus.Completed, TimeSpan.FromMinutes(3));
+        Assert.NotNull(completed);
+
+        // ── Assertion 1: the row's canon_version is still 1.0.0 even
+        //    though the provider is now 1.0.1.
+        Assert.Equal("1.0.0", completed!.CanonVersion);
+
+        // ── Assertion 2: the engine was invoked with --canon-version 1.0.0.
+        Assert.NotNull(recordingRef);
+        var invocations = recordingRef!.Invocations;
+        Assert.NotEmpty(invocations);
+        // The most recent invocation belongs to our scan (the only one in
+        // this test). The org-bound path always passes a non-null canon —
+        // §3.7 — so we assert exactness, not "either null or 1.0.0".
+        var lastInvocation = invocations[^1];
+        Assert.Equal("1.0.0", lastInvocation.CanonVersion);
+
+        // ── Assertion 3: the report.json the engine produced carries
+        //    canon_version: "1.0.0" — the snapshot reached all the way
+        //    down. Pull via the authed endpoint same as a real client.
+        var jsonResp = await client.GetAsync($"/api/scans/{publicId:D}/report.json");
+        jsonResp.EnsureSuccessStatusCode();
+        using var reportDoc = JsonDocument.Parse(await jsonResp.Content.ReadAsStringAsync());
+        Assert.True(reportDoc.RootElement.TryGetProperty("canon_version", out var canonEl)
+                    && canonEl.ValueKind == JsonValueKind.String,
+            "report.json must contain a string canon_version field");
+        Assert.Equal("1.0.0", canonEl.GetString());
+    }
+
+    /// <summary>
+    /// Polls the <c>scans</c> table directly (no auth round-trip) until the
+    /// row reaches <paramref name="terminalStatus"/> or <paramref name="deadline"/>
+    /// elapses. Returns the EF row on success, <c>null</c> on timeout.
+    /// </summary>
+    private static async Task<Scan?> WaitForScanStatusAsync(
+        WebInspectorFactory factory,
+        Guid publicId,
+        string terminalStatus,
+        TimeSpan deadline)
+    {
+        var stop = DateTime.UtcNow + deadline;
+        while (DateTime.UtcNow < stop)
+        {
+            await using var scope = factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<LinttyDbContext>();
+            var row = await db.Scans
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.PublicId == publicId);
+            if (row is not null
+                && (row.Status == terminalStatus
+                    || row.Status == ScanStatus.Failed
+                    || row.Status == ScanStatus.Completed))
+            {
+                if (row.Status != terminalStatus)
+                    return row; // surface failed rows so the test can report
+                return row;
+            }
+            await Task.Delay(TimeSpan.FromMilliseconds(250));
+        }
+        return null;
+    }
+
+    private static string Sha256Bytes(byte[] bytes)
+        => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
+
     private async Task RunFixtureAsync(
         string fixtureDir,
         string slnFileName,
@@ -265,7 +578,8 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
             $"Clone scratch directory should be purged after job completion: {clonePath}");
     }
 
-    private static (int ExitCode, string Stderr) RunEngineDirect(string slnPath, string pdfOut, string jsonOut)
+    private static (int ExitCode, string Stderr) RunEngineDirect(
+        string slnPath, string pdfOut, string jsonOut, string? canonVersion = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -288,6 +602,15 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
         psi.ArgumentList.Add(jsonOut);
         psi.ArgumentList.Add("--fail-on-grade");
         psi.ArgumentList.Add("F");
+        // ADR 0007 §3.7: org-bound dashboard scans always pass --canon-version
+        // explicitly. The PR 5 cross-determinism gate replays the same flag
+        // here so the comparison is apples-to-apples; the V0 anonymous gate
+        // (above) never sets it and the engine falls back to lintty.yml.
+        if (!string.IsNullOrEmpty(canonVersion))
+        {
+            psi.ArgumentList.Add("--canon-version");
+            psi.ArgumentList.Add(canonVersion);
+        }
         psi.Environment["LANG"] = "C";
         psi.Environment["LC_ALL"] = "C";
         psi.Environment["DOTNET_SYSTEM_GLOBALIZATION_INVARIANT"] = "1";
