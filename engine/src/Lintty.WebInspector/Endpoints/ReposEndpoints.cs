@@ -11,6 +11,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Lintty.WebInspector.Auth;
 using Lintty.WebInspector.Persistence;
+using Lintty.WebInspector.Persistence.Entities;
 using Lintty.WebInspector.Repos;
 using Lintty.WebInspector.Scans;
 
@@ -39,6 +40,24 @@ public static class ReposEndpoints
     public static void MapRepos(this IEndpointRouteBuilder routes)
     {
         var group = routes.MapGroup("/api/repos").WithTags("Repos");
+
+        group.MapPost("/import", ImportRepoFromGithubOrg)
+            .WithName("ImportRepoFromGithubOrg")
+            .WithSummary("Import a repo from a connected GitHub org (public or private)")
+            .WithDescription(
+                "Pulls metadata from `GET /repos/{full_name}` using the connected user's OAuth token, " +
+                "persists a `repos` row with all four GitHub-import fields populated " +
+                "(`github_repo_id`, `github_org_login`, `default_branch`, `is_private`). " +
+                "Idempotent on `(org_id, github_repo_id)` — re-importing the same repo returns the existing " +
+                "row with `200 OK`. Requires the user to have run Connect GitHub first AND to have the " +
+                "supplied org in their `github_orgs` cache (call `GET /api/github/orgs` to populate it).")
+            .Accepts<ImportRepoRequest>("application/json")
+            .Produces<RepoResponse>(StatusCodes.Status201Created, "application/json")
+            .Produces<RepoResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest, "application/json")
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized, "application/json")
+            .Produces<ErrorResponse>(StatusCodes.Status403Forbidden, "application/json")
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound, "application/json");
 
         group.MapPost("/", AddRepo)
             .WithName("AddRepo")
@@ -94,6 +113,88 @@ public static class ReposEndpoints
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized, "application/json")
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound, "application/json");
+    }
+
+    // ── POST /api/repos/import ─────────────────────────────────────────────
+    // ADR 0007 Apêndice E §E.8 — org-import path. The route lives here in
+    // ReposEndpoints (not GithubEndpoints) because every successful call
+    // creates a row in `repos` — the dashboard list endpoint
+    // (`GET /api/repos`) returns both manual + imported rows uniformly.
+    private static async Task<IResult> ImportRepoFromGithubOrg(
+        HttpContext ctx,
+        ImportRepoRequest? body,
+        IRepoService repoService,
+        IGitHubUserTokenStore tokenStore,
+        ITenantContext tenant,
+        LinttyDbContext db,
+        CancellationToken ct)
+    {
+        var who = await ResolveCallerAsync(ctx, tenant, db, ct).ConfigureAwait(false);
+        if (who.Failure is not null) return who.Failure;
+        var (orgId, userId) = (who.OrgId!.Value, who.UserId!.Value);
+
+        if (body is null
+            || string.IsNullOrWhiteSpace(body.GithubOrgLogin)
+            || string.IsNullOrWhiteSpace(body.RepoFullName))
+        {
+            return BadRequest(
+                "invalid_import_request",
+                "githubOrgLogin and repoFullName are required.");
+        }
+
+        // Active token gate — same as the /api/github/* endpoints.
+        var token = await tokenStore.GetActiveTokenAsync(userId, ct).ConfigureAwait(false);
+        if (string.IsNullOrEmpty(token))
+        {
+            return Results.Json(
+                new ErrorResponse
+                {
+                    Error = "github_not_connected",
+                    Message = "Conecte sua conta GitHub primeiro: /api/auth/github/connect/start",
+                },
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+
+        // Org membership gate via the github_orgs cache. Same defense as
+        // GithubEndpoints.ListReposForOrg — refuses requests where the user
+        // is not a member of the supplied login.
+        var hasOrg = await db.GithubOrgs
+            .AsNoTracking()
+            .AnyAsync(o => o.UserId == userId && o.GithubOrgLogin == body.GithubOrgLogin, ct)
+            .ConfigureAwait(false);
+        if (!hasOrg)
+        {
+            return Results.Json(
+                new ErrorResponse
+                {
+                    Error = "org_not_in_user_orgs",
+                    Message = "Você não tem acesso a essa organização ou ainda não atualizou a lista. Chame GET /api/github/orgs primeiro.",
+                },
+                statusCode: StatusCodes.Status404NotFound);
+        }
+
+        var result = await repoService.ImportFromGithubOrgAsync(
+            orgId, userId, token, body.GithubOrgLogin, body.RepoFullName, ct)
+            .ConfigureAwait(false);
+
+        return result.Outcome switch
+        {
+            ImportRepoOutcome.Created
+                => Results.Json(ToResponse(result.Repo!), statusCode: StatusCodes.Status201Created),
+            ImportRepoOutcome.AlreadyExists
+                => Results.Json(ToResponse(result.Repo!), statusCode: StatusCodes.Status200OK),
+            ImportRepoOutcome.RepoNotFound
+                => Results.Json(
+                    new ErrorResponse { Error = result.ErrorCode!, Message = result.ErrorMessage! },
+                    statusCode: StatusCodes.Status404NotFound),
+            ImportRepoOutcome.InsufficientScopes
+                => Results.Json(
+                    new ErrorResponse { Error = result.ErrorCode!, Message = result.ErrorMessage! },
+                    statusCode: StatusCodes.Status403Forbidden),
+            ImportRepoOutcome.Error
+                => BadRequest(result.ErrorCode!, result.ErrorMessage!),
+            _ => Results.StatusCode(StatusCodes.Status500InternalServerError),
+        };
     }
 
     // ── POST /api/repos ────────────────────────────────────────────────────
@@ -302,6 +403,23 @@ public sealed class AddRepoRequest
 {
     /// <summary>HTTPS URL of a public GitHub repository.</summary>
     [JsonPropertyName("githubUrl")] public string? GithubUrl { get; set; }
+}
+
+/// <summary>Request body for <c>POST /api/repos/import</c>. ADR 0007 Apêndice E §E.8.</summary>
+/// <example>
+/// { "githubOrgLogin": "acme", "repoFullName": "acme/engine" }
+/// </example>
+public sealed class ImportRepoRequest
+{
+    /// <summary>Login slug of the GitHub org the repo belongs to. Used to
+    /// enforce the github_orgs membership check at the endpoint layer.</summary>
+    [JsonPropertyName("githubOrgLogin")] public string? GithubOrgLogin { get; set; }
+
+    /// <summary>"owner/name" pair (e.g. <c>"acme/engine"</c>) — the format
+    /// `GET /api/github/orgs/{login}/repos` returns. The owner usually
+    /// equals <see cref="GithubOrgLogin"/>; we accept the full pair for
+    /// V1.1 forward-compat with personal repos.</summary>
+    [JsonPropertyName("repoFullName")] public string? RepoFullName { get; set; }
 }
 
 /// <summary>Wire shape returned by every successful repo endpoint.</summary>

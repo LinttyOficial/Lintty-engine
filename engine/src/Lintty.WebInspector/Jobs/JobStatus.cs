@@ -48,4 +48,20 @@ public static class JobErrorCode
     public const string LayerTaggingError = "layer_tagging_error";
     public const string Timeout = "timeout";
     public const string InternalError = "internal_error";
+
+    /// <summary>
+    /// ADR 0007 Apêndice E §E.9. Org-bound scans only. The user who added
+    /// a private repo (<c>repos.added_by_user_id</c>) has no active row in
+    /// <c>github_user_tokens</c> — token absent or soft-revoked. The scan
+    /// can't authenticate to GitHub for the clone, so it fails fast with
+    /// this code so the frontend can offer a "reconnect GitHub" CTA.
+    ///
+    /// <para>
+    /// The <c>scans</c> schema (PR 1) keeps a single nullable
+    /// <c>error</c> column rather than splitting code/message; the worker
+    /// prefixes the message with this literal so callers / tests can match
+    /// it via <c>error.Contains(JobErrorCode.GithubTokenRevoked)</c>.
+    /// </para>
+    /// </summary>
+    public const string GithubTokenRevoked = "GITHUB_TOKEN_REVOKED";
 }

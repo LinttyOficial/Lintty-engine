@@ -23,6 +23,7 @@ using Lintty.WebInspector.Auth;
 using Lintty.WebInspector.Canon;
 using Lintty.WebInspector.Configuration;
 using Lintty.WebInspector.Endpoints;
+using Lintty.WebInspector.Github;
 using Lintty.WebInspector.Jobs;
 using Lintty.WebInspector.Persistence;
 using Lintty.WebInspector.Persistence.Entities;
@@ -50,6 +51,7 @@ namespace Lintty.WebInspector;
 ///   GET  /api/auth/github/connect          – Sprint 3 PR 6 (status — privacy console)
 ///   DELETE /api/auth/github/connect        – Sprint 3 PR 6 (soft-revoke local)
 ///   POST /api/repos                 – ADR 0007 Sprint 3 PR 3 (manual add)
+///   POST /api/repos/import          – Sprint 3 PR 7 (import from connected GitHub org)
 ///   GET  /api/repos                 – Sprint 3 PR 3 (list)
 ///   GET  /api/repos/{id}            – Sprint 3 PR 3 (detail)
 ///   DELETE /api/repos/{id}          – Sprint 3 PR 3 (soft-delete)
@@ -58,6 +60,8 @@ namespace Lintty.WebInspector;
 ///   GET  /api/scans/{public_id}     – Sprint 3 PR 4 (poll)
 ///   GET  /api/scans/{public_id}/laudo.pdf  – Sprint 3 PR 4 (PDF)
 ///   GET  /api/scans/{public_id}/report.json – Sprint 3 PR 4 (JSON)
+///   GET  /api/github/orgs           – Sprint 3 PR 7 (list connected user's orgs + UPSERT cache)
+///   GET  /api/github/orgs/{login}/repos – Sprint 3 PR 7 (list repos under {login})
 ///   GET  /healthz                   – liveness
 ///
 /// Sprint 2 introduces auth (Identity + cookie + GitHub OAuth) and the tenant
@@ -288,9 +292,16 @@ public class Program
     {
         services.AddHttpClient<IGitHubMetadataClient, GitHubMetadataClient>(GitHubMetadataClient.HttpClientName);
 
+        // ADR 0007 Apêndice E §E.7 / §E.8 / Sprint 3 PR 7 — read-side GitHub
+        // orgs/repos client used by /api/github/* and the org-import path
+        // in RepoService.ImportFromGithubOrgAsync. Distinct HttpClient pool
+        // from the metadata client (different UA + accept headers) so the
+        // two surfaces don't share connection state.
+        services.AddHttpClient<IGitHubOrgsClient, GitHubOrgsClient>(GitHubOrgsClient.HttpClientName);
+
         // ADR 0007 Sprint 3 / PR 3 — manual repo CRUD. Scoped because the
-        // service holds an EF DbContext (also scoped). Org-import variant
-        // arrives in PR 7 alongside IGitHubOrgsClient.
+        // service holds an EF DbContext (also scoped). PR 7 widened the
+        // surface with ImportFromGithubOrgAsync (Apêndice E §E.8).
         services.AddScoped<IRepoService, RepoService>();
 
         // ADR 0007 Sprint 3 / PR 4 — org-bound scan lifecycle. Scoped (EF
@@ -390,6 +401,7 @@ public class Program
         app.MapJobs();
         app.MapAuth();
         app.MapAuthGithubConnect();
+        app.MapGithub();
         app.MapRepos();
         app.MapScans();
     }

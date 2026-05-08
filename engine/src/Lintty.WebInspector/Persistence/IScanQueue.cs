@@ -81,6 +81,16 @@ public interface IScanQueue
 /// claim a single round-trip. <see cref="DefaultBranch"/> is the snapshot
 /// from <c>repos.default_branch</c> at claim time; <c>null</c> means "let
 /// <c>git clone --depth 1</c> resolve HEAD itself".
+///
+/// <para>
+/// <b>Apêndice E §E.9 fields (PR 7).</b> <see cref="IsPrivate"/> and
+/// <see cref="AddedByUserId"/> are joined in from the same <c>repos</c>
+/// row. The worker reads them to decide whether to fetch the user OAuth
+/// token (<c>is_private = true</c> → look up
+/// <see cref="Lintty.WebInspector.Auth.IGitHubUserTokenStore.GetActiveTokenAsync"/>
+/// for <see cref="AddedByUserId"/>) before invoking <c>git clone</c>.
+/// Public repos pass <c>token: null</c> like the V0 anonymous flow.
+/// </para>
 /// </remarks>
 public sealed record ClaimedScan(
     long ScanId,
@@ -90,4 +100,6 @@ public sealed record ClaimedScan(
     string GithubUrl,
     string? DefaultBranch,
     string? Ref,
-    string CanonVersion);
+    string CanonVersion,
+    bool IsPrivate,
+    long AddedByUserId);

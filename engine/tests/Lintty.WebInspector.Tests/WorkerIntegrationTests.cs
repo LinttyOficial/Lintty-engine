@@ -11,7 +11,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Lintty.WebInspector.Auth;
 using Lintty.WebInspector.Canon;
+using Lintty.WebInspector.Github;
 using Lintty.WebInspector.Jobs;
 using Lintty.WebInspector.Persistence;
 using Lintty.WebInspector.Persistence.Entities;
@@ -449,6 +451,127 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
                     && canonEl.ValueKind == JsonValueKind.String,
             "report.json must contain a string canon_version field");
         Assert.Equal("1.0.0", canonEl.GetString());
+    }
+
+    /// <summary>
+    /// ADR 0007 Apêndice E §E.9 #4 cross-check: private clone with a
+    /// revoked token marks the scan as failed with
+    /// <see cref="JobErrorCode.GithubTokenRevoked"/>. Exercises the worker's
+    /// new pre-clone token lookup (PR 7) — when
+    /// <c>tokenStore.GetActiveTokenAsync(scan.AddedByUserId)</c> returns
+    /// <c>null</c>, the pipeline must short-circuit BEFORE invoking
+    /// <c>git clone</c> (no shell-out, no transient filesystem footprint)
+    /// and surface the structured error so the frontend can prompt the
+    /// user to reconnect GitHub.
+    ///
+    /// <para>
+    /// <b>Setup.</b> The test imports a private repo via
+    /// <c>POST /api/repos/import</c> (the only path that sets
+    /// <c>repos.is_private = true</c>; manual add can't), then revokes
+    /// the token via <see cref="IGitHubUserTokenStore.RevokeAsync"/>, then
+    /// triggers a scan. The worker should never reach
+    /// <c>FixtureCopyGitClient.CloneAsync</c> — we use the real
+    /// <c>GitCliClient</c> override-free precisely because if the clone
+    /// did fire, it would error with a different message and the
+    /// assertion below would surface that drift.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>The assertion.</b> <c>Scan.Status == Failed</c> AND
+    /// <c>Scan.Error.Contains("GITHUB_TOKEN_REVOKED")</c>. Per ADR 0007
+    /// PR 1, the schema kept a single <c>error</c> column rather than
+    /// splitting code/message; the worker prefixes the message with the
+    /// literal code so callers / tests can grep for it.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Worker_Private_Repo_With_Revoked_Token_Marks_Scan_Failed_With_GITHUB_TOKEN_REVOKED()
+    {
+        await ResetAsync();
+
+        await using var factory = CreateFactory();
+        factory.DisableWorker = false;
+        // The git client is irrelevant — the worker should bail BEFORE the
+        // clone call. Leave the default GitCliClient (which would fail
+        // with a different message if it actually fired). If a future
+        // refactor moves the token check to AFTER the clone, this test
+        // will go red because the GitCliClient subprocess error will not
+        // contain "GITHUB_TOKEN_REVOKED".
+
+        // Stage 1: connect a fake GitHub identity + import a private repo.
+        // This is the only flow that sets repos.is_private = true; manual
+        // add can't.
+        factory.FakeGitHubOrgs.Orgs = new List<GitHubOrgSummary>
+        {
+            new(91001, "acme", null),
+        };
+        factory.FakeGitHubOrgs.MetadataByFullName = new Dictionary<string, GitHubRepoDetails>
+        {
+            ["acme/private-saint"] = new(
+                Id: 91101,
+                Name: "private-saint",
+                FullName: "acme/private-saint",
+                IsPrivate: true,
+                DefaultBranch: "main",
+                CloneUrl: "https://github.com/acme/private-saint.git"),
+        };
+
+        var (client, orgId, userId) = await SignUpAndGetAuthedClientAsync(
+            factory, "revoked@example.com", "Revoked Co");
+
+        // Seed an active token + populate the github_orgs cache.
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IGitHubUserTokenStore>();
+            await store.SaveAsync(userId, "ghs_BEFORE_REVOCATION", new[] { "repo", "read:org" }, CancellationToken.None);
+        }
+        (await client.GetAsync("/api/github/orgs")).EnsureSuccessStatusCode();
+
+        // Import the private repo.
+        var importResp = await client.PostAsJsonAsync("/api/repos/import", new
+        {
+            githubOrgLogin = "acme",
+            repoFullName = "acme/private-saint",
+        });
+        Assert.Equal(System.Net.HttpStatusCode.Created, importResp.StatusCode);
+        using var importDoc = JsonDocument.Parse(await importResp.Content.ReadAsStringAsync());
+        var repoId = importDoc.RootElement.GetProperty("id").GetInt64();
+        Assert.True(importDoc.RootElement.GetProperty("isPrivate").GetBoolean(),
+            "Import should have flagged this repo as private; the worker decision branches on this column.");
+
+        // Stage 2: revoke the token. This is the §E.9 trigger condition —
+        // user revoked locally (or upstream silently revoked). At this
+        // point GetActiveTokenAsync returns null for this user.
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IGitHubUserTokenStore>();
+            var revoked = await store.RevokeAsync(userId, CancellationToken.None);
+            Assert.True(revoked, "RevokeAsync should have flipped revoked_at on the seeded row.");
+        }
+
+        // Stage 3: trigger a scan. We go through the service rather than
+        // the HTTP endpoint to focus on the worker path — ScansEndpointsTests
+        // covers the trigger contract.
+        Guid publicId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, gitRef: null, CancellationToken.None);
+            Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
+            publicId = trigger.Scan!.PublicId;
+        }
+
+        // Stage 4: wait for the worker to mark the scan failed. Short
+        // deadline — the bail-out path is in-memory, no clone, no
+        // subprocess.
+        var failed = await WaitForScanStatusAsync(
+            factory, publicId, ScanStatus.Failed, TimeSpan.FromSeconds(15));
+        Assert.NotNull(failed);
+        Assert.Equal(ScanStatus.Failed, failed!.Status);
+        Assert.NotNull(failed.Error);
+        Assert.Contains(JobErrorCode.GithubTokenRevoked, failed.Error!, StringComparison.Ordinal);
+        // hash_content must NOT be set on a failed scan.
+        Assert.Null(failed.HashContent);
     }
 
     /// <summary>

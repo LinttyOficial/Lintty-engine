@@ -12,6 +12,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Lintty.Engine.Core.Workspace;
 using Lintty.WebInspector.Artifacts;
+using Lintty.WebInspector.Auth;
 using Lintty.WebInspector.Configuration;
 using Lintty.WebInspector.Persistence;
 using Lintty.WebInspector.Validation;
@@ -504,6 +505,7 @@ public sealed class JobWorker : BackgroundService
         var git = services.GetRequiredService<IGitClient>();
         var engine = services.GetRequiredService<IEngineRunner>();
         var artifacts = services.GetRequiredService<IArtifactStore>();
+        var tokenStore = services.GetRequiredService<IGitHubUserTokenStore>();
 
         var cloneRoot = Path.Combine(Path.GetTempPath(), $"lintty-scan-{scan.PublicId:N}");
         var repoDir = Path.Combine(cloneRoot, "repo");
@@ -520,13 +522,41 @@ public sealed class JobWorker : BackgroundService
                 return;
             }
 
+            // ── 1a. Apêndice E §E.9 — fetch user token for private repos.
+            // Public repos pass token=null (V0 anonymous clone). Private
+            // repos look up the OAuth token of the user who added the repo
+            // (repos.added_by_user_id). Token missing/revoked → fail fast
+            // with GITHUB_TOKEN_REVOKED so the frontend can prompt the user
+            // to re-connect GitHub.
+            //
+            // §E.9 #1 invariant: clone uses added_by_user_id, not
+            // triggered_by_user_id. A second member of the same Lintty-org
+            // who triggers a scan inherits the token of whoever first
+            // imported the repo. If that user revoked, the scan fails —
+            // the org owner has to readd the repo (no automatic fallback
+            // by design, per §E.9 #1).
+            string? cloneToken = null;
+            if (scan.IsPrivate)
+            {
+                cloneToken = await tokenStore.GetActiveTokenAsync(scan.AddedByUserId, ct).ConfigureAwait(false);
+                if (string.IsNullOrEmpty(cloneToken))
+                {
+                    var msg = $"{JobErrorCode.GithubTokenRevoked}: o usuário que adicionou este repositório (id={scan.AddedByUserId.ToString(CultureInfo.InvariantCulture)}) não tem token GitHub ativo. Peça para reconectar em /api/auth/github/connect/start.";
+                    _logger.LogWarning(
+                        "Private clone aborted: token revoked for added_by_user_id={UserId}, scan_public_id={PublicId}",
+                        scan.AddedByUserId, scan.PublicId);
+                    await queue.MarkFailedAsync(scan.ScanId, msg, ct).ConfigureAwait(false);
+                    return;
+                }
+            }
+
             // Ref preference: explicit override on the scan row → repo's
             // default branch (snapshotted at claim time) → null (let
             // git clone --depth 1 resolve HEAD itself, same as V0).
             var gitRef = !string.IsNullOrEmpty(scan.Ref)
                 ? scan.Ref
                 : (string.IsNullOrEmpty(scan.DefaultBranch) ? null : scan.DefaultBranch);
-            var cloneResult = await git.CloneAsync(coordsParse, gitRef, token: null, repoDir, ct).ConfigureAwait(false);
+            var cloneResult = await git.CloneAsync(coordsParse, gitRef, cloneToken, repoDir, ct).ConfigureAwait(false);
             if (!cloneResult.Success)
             {
                 await queue.MarkFailedAsync(scan.ScanId,

@@ -10,6 +10,7 @@ using Microsoft.Extensions.Hosting;
 using Lintty.WebInspector;
 using Lintty.WebInspector.Auth;
 using Lintty.WebInspector.Canon;
+using Lintty.WebInspector.Github;
 using Lintty.WebInspector.Jobs;
 using Lintty.WebInspector.Validation;
 using Lintty.WebInspector.Tests.Fakes;
@@ -35,6 +36,13 @@ public sealed class WebInspectorFactory : WebApplicationFactory<Program>
     public string ConnectionString { get; }
     public FakeGitHubMetadataClient FakeGitHub { get; } = new();
     public FakeGitHubOAuthClient FakeGitHubOAuth { get; } = new();
+    /// <summary>
+    /// Fake for <see cref="IGitHubOrgsClient"/> — the read-side GitHub
+    /// orgs/repos client introduced in PR 7. Tests script the orgs +
+    /// repos this fake "sees" before issuing the request; defaults to
+    /// empty so a test that doesn't care simply sees an empty list.
+    /// </summary>
+    public FakeGitHubOrgsClient FakeGitHubOrgs { get; } = new();
 
     /// <summary>
     /// When set, the factory wires GitHub OAuth credentials so the
@@ -131,6 +139,14 @@ public sealed class WebInspectorFactory : WebApplicationFactory<Program>
             // Swap the OAuth client unconditionally — tests never hit github.com.
             RemoveAll<IGitHubOAuthClient>(services);
             services.AddSingleton<IGitHubOAuthClient>(FakeGitHubOAuth);
+
+            // Same for the orgs/repos client. AddHttpClient<TI, TImpl>
+            // registers BOTH the typed client + the HttpMessageHandler
+            // factory entry; RemoveAll on TI only catches the first half,
+            // but the swapped Singleton wins because DI always resolves
+            // the LAST registration for a service type.
+            RemoveAll<IGitHubOrgsClient>(services);
+            services.AddSingleton<IGitHubOrgsClient>(FakeGitHubOrgs);
 
             if (GitClientOverride is not null)
             {
