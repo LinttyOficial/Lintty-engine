@@ -113,7 +113,7 @@ public sealed class AuthGithubConnectTests : WebInspectorTestBase
     // ── /connect/callback ──────────────────────────────────────────────────
 
     [Fact]
-    public async Task Connect_Callback_With_Mismatched_State_Returns_400()
+    public async Task Connect_Callback_With_Mismatched_State_Redirects_With_Reason()
     {
         await ResetAsync();
         await using var factory = CreateFactory();
@@ -127,15 +127,18 @@ public sealed class AuthGithubConnectTests : WebInspectorTestBase
         Assert.False(string.IsNullOrEmpty(stateCookie));
 
         // Hit the callback with a deliberately wrong state value in the query.
+        // Per PR F4 contract the callback is reached via top-level browser
+        // navigation, so the response must be a 302 back to the SPA with a
+        // machine-readable reason — never a 400 JSON page.
         var resp = await client.GetAsync(
             $"/api/auth/github/connect/callback?code=abc&state=NOT_THE_RIGHT_STATE");
-        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
-        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-        Assert.Equal("invalid_oauth_state", doc.RootElement.GetProperty("error").GetString());
+        Assert.Equal(HttpStatusCode.Redirect, resp.StatusCode);
+        Assert.Equal("/dashboard?github_connect=error&reason=invalid_oauth_state",
+            resp.Headers.Location?.ToString());
     }
 
     [Fact]
-    public async Task Connect_Callback_With_Insufficient_Scopes_Returns_400()
+    public async Task Connect_Callback_With_Insufficient_Scopes_Redirects_With_Reason()
     {
         await ResetAsync();
         await using var factory = CreateFactory();
@@ -152,9 +155,9 @@ public sealed class AuthGithubConnectTests : WebInspectorTestBase
             factory,"alice@example.com", "Alice Co");
 
         var (cb, _) = await DriveStartAndCallbackAsync(client);
-        Assert.Equal(HttpStatusCode.BadRequest, cb.StatusCode);
-        using var doc = JsonDocument.Parse(await cb.Content.ReadAsStringAsync());
-        Assert.Equal("insufficient_scopes", doc.RootElement.GetProperty("error").GetString());
+        Assert.Equal(HttpStatusCode.Redirect, cb.StatusCode);
+        Assert.Equal("/dashboard?github_connect=error&reason=insufficient_scopes",
+            cb.Headers.Location?.ToString());
 
         // No token persisted on this rejection path.
         await using var scope = factory.Services.CreateAsyncScope();
@@ -181,7 +184,7 @@ public sealed class AuthGithubConnectTests : WebInspectorTestBase
 
         var (cb, _) = await DriveStartAndCallbackAsync(client);
         Assert.Equal(HttpStatusCode.Redirect, cb.StatusCode);
-        Assert.Equal("/dashboard.html", cb.Headers.Location?.ToString());
+        Assert.Equal("/dashboard?github_connect=success", cb.Headers.Location?.ToString());
 
         // Row exists, encrypted bytes ≠ plaintext, scopes preserved.
         await using var scope = factory.Services.CreateAsyncScope();
@@ -203,7 +206,7 @@ public sealed class AuthGithubConnectTests : WebInspectorTestBase
     }
 
     [Fact]
-    public async Task Connect_Callback_With_Github_Identity_Mismatch_Returns_400()
+    public async Task Connect_Callback_With_Github_Identity_Mismatch_Redirects_With_Reason()
     {
         await ResetAsync();
         await using var factory = CreateFactory();
@@ -235,9 +238,9 @@ public sealed class AuthGithubConnectTests : WebInspectorTestBase
             Email: "alice2@example.com");
 
         var (cb, _) = await DriveStartAndCallbackAsync(client);
-        Assert.Equal(HttpStatusCode.BadRequest, cb.StatusCode);
-        using var doc = JsonDocument.Parse(await cb.Content.ReadAsStringAsync());
-        Assert.Equal("github_identity_mismatch", doc.RootElement.GetProperty("error").GetString());
+        Assert.Equal(HttpStatusCode.Redirect, cb.StatusCode);
+        Assert.Equal("/dashboard?github_connect=error&reason=github_identity_mismatch",
+            cb.Headers.Location?.ToString());
 
         // No token persisted; existing external_logins untouched.
         await using var scope = factory.Services.CreateAsyncScope();

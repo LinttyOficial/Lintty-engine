@@ -316,7 +316,7 @@ public static class AuthEndpoints
         await signInMgr.SignInAsync(user, isPersistent: true).ConfigureAwait(false);
         log.LogInformation("GitHub OAuth login: user_id={UserId} login={Login}", user.Id, profile.Login);
 
-        return Results.Redirect("/dashboard.html");
+        return Results.Redirect("/dashboard");
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────

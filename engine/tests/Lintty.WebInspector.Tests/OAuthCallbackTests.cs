@@ -65,7 +65,7 @@ public sealed class OAuthCallbackTests : WebInspectorTestBase
         var callback = await client.GetAsync(
             $"/api/auth/github/callback?code=abc&state={Uri.EscapeDataString(stateCookie!)}");
         Assert.Equal(HttpStatusCode.Redirect, callback.StatusCode);
-        Assert.Equal("/dashboard.html", callback.Headers.Location?.ToString());
+        Assert.Equal("/dashboard", callback.Headers.Location?.ToString());
 
         // Verify rows in the DB.
         await using var scope = factory.Services.CreateAsyncScope();

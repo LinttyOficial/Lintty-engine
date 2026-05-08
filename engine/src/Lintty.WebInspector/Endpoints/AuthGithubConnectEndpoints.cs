@@ -39,6 +39,17 @@ namespace Lintty.WebInspector.Endpoints;
 /// The state cookie is named <c>lintty_oauth_connect_state</c> — different
 /// from the login flow's <c>lintty_oauth_state</c> — so the two CSRF tokens
 /// cannot collide if a user starts both flows in two browser tabs.
+///
+/// **Callback response shape (Sprint 3 PR F4 frontend contract).** The
+/// <c>/connect/callback</c> endpoint is hit by the user's browser as a top-
+/// level navigation after they click "Authorize" on github.com — so it must
+/// always return a <c>302</c> back into the SPA, never a JSON error page.
+/// <list type="bullet">
+///   <item><description>Success: <c>302 Location: /dashboard?github_connect=success</c>.</description></item>
+///   <item><description>Validation failure (state mismatch, missing query, scopes deselected, identity mismatch, exchange error): <c>302 Location: /dashboard?github_connect=error&amp;reason=&lt;code&gt;</c> where <c>&lt;code&gt;</c> is the same machine-readable identifier (e.g. <c>invalid_oauth_state</c>, <c>insufficient_scopes</c>, <c>github_identity_mismatch</c>, <c>github_oauth_exchange_failed</c>, <c>invalid_oauth_callback</c>) the frontend maps to human copy.</description></item>
+///   <item><description><c>github_oauth_not_configured</c> stays a <c>503 application/json</c> on purpose — that's a server misconfiguration, not a user error, and we want it to fail visibly in operator dashboards instead of being swallowed by a banner.</description></item>
+///   <item><description>Anonymous (no Lintty session at callback time) keeps its <c>401 application/json</c> — non-browser callers (curl/CI) and lost-session navigations both benefit from the explicit error.</description></item>
+/// </list>
 /// </summary>
 public static class AuthGithubConnectEndpoints
 {
@@ -74,9 +85,8 @@ public static class AuthGithubConnectEndpoints
 
         group.MapGet("/callback", ConnectCallback)
             .WithName("GitHubConnectCallback")
-            .WithSummary("Exchange code, persist encrypted token, redirect to dashboard")
+            .WithSummary("Exchange code, persist encrypted token, redirect to /dashboard with success/error reason")
             .Produces(StatusCodes.Status302Found)
-            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized)
             .Produces<ErrorResponse>(StatusCodes.Status503ServiceUnavailable);
 
@@ -158,14 +168,14 @@ public static class AuthGithubConnectEndpoints
         var code = ctx.Request.Query["code"].ToString();
         var state = ctx.Request.Query["state"].ToString();
         if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(state))
-            return BadRequest("invalid_oauth_callback", "Missing code or state.");
+            return RedirectError("invalid_oauth_callback");
 
         var expectedState = ctx.Request.Cookies[ConnectStateCookie];
         // Always clear the cookie — even on mismatch, so a stale state cannot
         // be replayed.
         ctx.Response.Cookies.Delete(ConnectStateCookie, new CookieOptions { Path = ConnectCookiePath });
         if (string.IsNullOrEmpty(expectedState) || !string.Equals(expectedState, state, StringComparison.Ordinal))
-            return BadRequest("invalid_oauth_state", "State token mismatch.");
+            return RedirectError("invalid_oauth_state");
 
         // Exchange code → token + scopes.
         GitHubTokenGrant grant;
@@ -179,7 +189,7 @@ public static class AuthGithubConnectEndpoints
         catch (Exception ex)
         {
             log.LogWarning(ex, "GitHub connect exchange failed for user_id={UserId}", userId);
-            return BadRequest("github_oauth_exchange_failed", "GitHub did not return a usable identity.");
+            return RedirectError("github_oauth_exchange_failed");
         }
 
         // Validate scopes — GitHub lets the user deselect them on the
@@ -191,8 +201,7 @@ public static class AuthGithubConnectEndpoints
             log.LogWarning(
                 "GitHub connect rejected: insufficient scopes user_id={UserId} granted=[{Granted}]",
                 userId, string.Join(",", grant.Scopes));
-            return BadRequest("insufficient_scopes",
-                "GitHub returned a token without the required permissions; please retry and accept all requested scopes.");
+            return RedirectError("insufficient_scopes");
         }
 
         // Identity reconciliation. The user is logged in via a Lintty cookie;
@@ -224,8 +233,7 @@ public static class AuthGithubConnectEndpoints
             log.LogWarning(
                 "GitHub connect identity mismatch: user_id={UserId} expected_provider_user_id={Expected} got_provider_user_id={Got}",
                 userId, existingLink.ProviderUserId, profile.ProviderUserId);
-            return BadRequest("github_identity_mismatch",
-                "Você concedeu acesso com uma conta GitHub diferente da já vinculada. Faça logout no GitHub e tente novamente.");
+            return RedirectError("github_identity_mismatch");
         }
         else if (existingLink.Username != profile.Login)
         {
@@ -238,9 +246,10 @@ public static class AuthGithubConnectEndpoints
         await tokenStore.SaveAsync(userId, grant.AccessToken, grant.Scopes, ct).ConfigureAwait(false);
         log.LogInformation("GitHub connect: user_id={UserId} login={Login}", userId, profile.Login);
 
-        // Redirect back to the dashboard. Mirrors the login flow's target so
-        // the front-end has a single entry point.
-        return Results.Redirect("/dashboard.html");
+        // Redirect back to the SPA dashboard with a success flag. The Next.js
+        // front-end at /dashboard reads the querystring once on mount, shows
+        // a "GitHub conectado" toast, and strips the param. PR F4 contract.
+        return Results.Redirect("/dashboard?github_connect=success");
     }
 
     // ── GET /api/auth/github/connect ───────────────────────────────────────
@@ -309,9 +318,16 @@ public static class AuthGithubConnectEndpoints
         => Results.Json(new ErrorResponse { Error = "unauthorized", Message = "Authentication required." },
             statusCode: StatusCodes.Status401Unauthorized);
 
-    private static IResult BadRequest(string code, string message)
-        => Results.Json(new ErrorResponse { Error = code, Message = message },
-            statusCode: StatusCodes.Status400BadRequest);
+    /// <summary>
+    /// Browser-friendly error: redirect back to <c>/dashboard</c> with the
+    /// machine-readable reason as a querystring param. The frontend (PR F4)
+    /// owns the human copy, so the backend only emits the code. Reasons are
+    /// ASCII today but go through <see cref="Uri.EscapeDataString"/> so a
+    /// future code containing reserved characters (':' '/' '?' '&amp;') stays
+    /// safe inside the query.
+    /// </summary>
+    private static IResult RedirectError(string code)
+        => Results.Redirect($"/dashboard?github_connect=error&reason={Uri.EscapeDataString(code)}");
 }
 
 // ── DTOs ───────────────────────────────────────────────────────────────────
