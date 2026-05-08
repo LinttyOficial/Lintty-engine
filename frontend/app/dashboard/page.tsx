@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SkipLink } from "@/components/SkipLink";
 import { useAuth } from "@/lib/auth";
+import { GitHubConnectProvider } from "@/lib/github-connect";
 import { ReposSection } from "./components/ReposSection";
+import { GitHubConnectBadge } from "./components/GitHubConnectBadge";
+import { GitHubConnectCallback } from "./components/GitHubConnectCallback";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -28,7 +31,19 @@ export default function DashboardPage() {
         {isLoading && <LoadingSkeleton />}
         {!isLoading && networkError && <NetworkErrorState />}
         {!isLoading && !networkError && isAuthenticated && (
-          <ReposSection orgName={currentOrg?.name ?? "sua organização"} />
+          <GitHubConnectProvider>
+            <section className="max-w-3xl mx-auto">
+              {/* Suspense boundary required by Next.js 15 for any client
+                  component using useSearchParams() under static export. */}
+              <Suspense fallback={null}>
+                <GitHubConnectCallback />
+              </Suspense>
+            </section>
+            <ReposSection orgName={currentOrg?.name ?? "sua organização"} />
+            <section className="max-w-3xl mx-auto">
+              <GitHubConnectBadge />
+            </section>
+          </GitHubConnectProvider>
         )}
       </main>
       <Footer />
