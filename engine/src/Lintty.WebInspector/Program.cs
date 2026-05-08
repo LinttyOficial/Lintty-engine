@@ -24,6 +24,7 @@ using Lintty.WebInspector.Endpoints;
 using Lintty.WebInspector.Jobs;
 using Lintty.WebInspector.Persistence;
 using Lintty.WebInspector.Persistence.Entities;
+using Lintty.WebInspector.Repos;
 using Lintty.WebInspector.Validation;
 
 namespace Lintty.WebInspector;
@@ -41,6 +42,10 @@ namespace Lintty.WebInspector;
 ///   GET  /api/auth/me               – Sprint 2
 ///   GET  /api/auth/github/start     – Sprint 2 (OAuth GitHub)
 ///   GET  /api/auth/github/callback  – Sprint 2
+///   POST /api/repos                 – ADR 0007 Sprint 3 PR 3 (manual add)
+///   GET  /api/repos                 – Sprint 3 PR 3 (list)
+///   GET  /api/repos/{id}            – Sprint 3 PR 3 (detail)
+///   DELETE /api/repos/{id}          – Sprint 3 PR 3 (soft-delete)
 ///   GET  /healthz                   – liveness
 ///
 /// Sprint 2 introduces auth (Identity + cookie + GitHub OAuth) and the tenant
@@ -223,6 +228,11 @@ public class Program
     private static void RegisterValidationServices(IServiceCollection services)
     {
         services.AddHttpClient<IGitHubMetadataClient, GitHubMetadataClient>(GitHubMetadataClient.HttpClientName);
+
+        // ADR 0007 Sprint 3 / PR 3 — manual repo CRUD. Scoped because the
+        // service holds an EF DbContext (also scoped). Org-import variant
+        // arrives in PR 7 alongside IGitHubOrgsClient.
+        services.AddScoped<IRepoService, RepoService>();
     }
 
     private static void RegisterBackgroundWorkers(IServiceCollection services)
@@ -313,6 +323,7 @@ public class Program
         app.MapHealth();
         app.MapJobs();
         app.MapAuth();
+        app.MapRepos();
     }
 
     private static string? ResolveLandingRoot(WebApplication app)

@@ -1,4 +1,8 @@
+using System.Net.Http;
+using System.Net.Http.Json;
+using System.Text.Json;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Xunit;
 
 namespace Lintty.WebInspector.Tests;
@@ -49,4 +53,40 @@ public abstract class WebInspectorTestBase
     /// also cleans up the per-factory artifact scratch root.
     /// </summary>
     protected WebInspectorFactory CreateFactory() => new(_pg.ConnectionString);
+
+    /// <summary>
+    /// Convenience for the dashboard test suites: spin up a <see cref="HttpClient"/>
+    /// that signs up a fresh user (creating its default org) and keeps the
+    /// <c>lintty_auth</c> cookie around for follow-up calls. Returns the
+    /// authenticated client + the org id so cross-tenant tests can mix two
+    /// signups on the same factory and assert on the second org's data.
+    ///
+    /// Email collision is the caller's problem — pass distinct emails per
+    /// signup within a single <see cref="ResetAsync"/> window.
+    /// </summary>
+    protected static async Task<(HttpClient Client, long OrgId, long UserId)> SignUpAndGetAuthedClientAsync(
+        WebInspectorFactory factory,
+        string email,
+        string orgName,
+        string password = "Strong-Password-1!",
+        string? displayName = null)
+    {
+        var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            HandleCookies = true,
+        });
+
+        var resp = await client.PostAsJsonAsync("/api/auth/signup", new
+        {
+            email,
+            password,
+            displayName = displayName ?? "Test User",
+            orgName,
+        });
+        resp.EnsureSuccessStatusCode();
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        var orgId = doc.RootElement.GetProperty("currentOrg").GetProperty("orgId").GetInt64();
+        var userId = doc.RootElement.GetProperty("user").GetProperty("id").GetInt64();
+        return (client, orgId, userId);
+    }
 }

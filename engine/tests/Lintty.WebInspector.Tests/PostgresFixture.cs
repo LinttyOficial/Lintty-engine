@@ -86,6 +86,11 @@ public sealed class PostgresFixture : IAsyncLifetime
                     WHERE schemaname = 'public'
                       AND tablename IN (
                         'jobs', 'rate_limits',
+                        -- Sprint 3 (PR 1) — multi-tenant scan ownership +
+                        -- Apêndice E (OAuth user-token elevation). Listed
+                        -- here even though some tables are not exercised by
+                        -- PR 3 yet, so PR 4–7 inherit a clean reset path.
+                        'scans', 'repos', 'github_orgs', 'github_user_tokens',
                         'org_members', 'external_logins', 'orgs',
                         'user_tokens', 'user_logins', 'user_claims', 'user_roles',
                         'role_claims', 'users', 'roles'
