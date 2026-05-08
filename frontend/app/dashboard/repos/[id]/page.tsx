@@ -31,8 +31,8 @@
  */
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SkipLink } from "@/components/SkipLink";
@@ -62,7 +62,6 @@ const CANON_VERSION_DISPLAY = "1.0.0";
 
 export default function RepoDetailPage() {
   const router = useRouter();
-  const params = useParams<{ id: string }>();
   const { isLoading: authLoading, isAuthenticated, networkError } = useAuth();
 
   useEffect(() => {
@@ -71,16 +70,29 @@ export default function RepoDetailPage() {
     }
   }, [authLoading, isAuthenticated, networkError, router]);
 
-  // Parse early so we render the "not found" branch for non-numeric ids
-  // (the static-export placeholder, malformed hand-typed urls, etc.)
-  // without a backend round-trip.
-  const repoId = useMemo(() => {
-    const raw = params?.id;
-    if (typeof raw !== "string") return null;
+  // Read the id from window.location.pathname instead of useParams().
+  // With output: "export" + generateStaticParams(["_"]), Next renders
+  // a single placeholder HTML and useParams() returns the build-time
+  // "_" — never the runtime URL segment. window.location is the only
+  // reactive source of the actual id after the SPA fallback rewrite.
+  // undefined = pre-hydration, null = invalid id, number = ready.
+  const [repoId, setRepoId] = useState<number | null | undefined>(undefined);
+  useEffect(() => {
+    const m = window.location.pathname.match(
+      /^\/dashboard\/repos\/([^/]+)\/?$/,
+    );
+    if (!m) {
+      setRepoId(null);
+      return;
+    }
+    const raw = m[1];
     const n = Number.parseInt(raw, 10);
-    if (!Number.isFinite(n) || n <= 0 || String(n) !== raw) return null;
-    return n;
-  }, [params]);
+    if (!Number.isFinite(n) || n <= 0 || String(n) !== raw) {
+      setRepoId(null);
+      return;
+    }
+    setRepoId(n);
+  }, []);
 
   return (
     <>
@@ -91,7 +103,9 @@ export default function RepoDetailPage() {
         {!authLoading && networkError && <NetworkErrorState />}
         {!authLoading && !networkError && isAuthenticated && (
           <GitHubConnectProvider>
-            {repoId === null ? (
+            {repoId === undefined ? (
+              <PageSkeleton />
+            ) : repoId === null ? (
               <NotFoundState />
             ) : (
               <RepoDetailBody repoId={repoId} />

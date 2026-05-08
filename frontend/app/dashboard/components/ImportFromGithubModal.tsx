@@ -84,6 +84,12 @@ interface ImportedMap {
   [fullName: string]: "pending" | "done" | { error: string };
 }
 
+interface BulkProgress {
+  total: number;
+  done: number;
+  active: boolean;
+}
+
 export function ImportFromGithubModal({
   open,
   onClose,
@@ -110,6 +116,12 @@ export function ImportFromGithubModal({
   const [selectedOrg, setSelectedOrg] = useState<GitHubOrgSummary | null>(null);
   const [search, setSearch] = useState("");
   const [imported, setImported] = useState<ImportedMap>({});
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulk, setBulk] = useState<BulkProgress>({
+    total: 0,
+    done: 0,
+    active: false,
+  });
 
   const cardRef = useRef<HTMLDivElement>(null);
   const closeBtnRef = useRef<HTMLButtonElement>(null);
@@ -230,6 +242,8 @@ export function ImportFromGithubModal({
     if (!open) return;
     setSearch("");
     setImported({});
+    setSelected(new Set());
+    setBulk({ total: 0, done: 0, active: false });
     setSelectedOrg(null);
     setReposState({
       status: "idle",
@@ -281,6 +295,7 @@ export function ImportFromGithubModal({
   function handlePickOrg(org: GitHubOrgSummary) {
     setSelectedOrg(org);
     setSearch("");
+    setSelected(new Set());
     setStep("pick-repo");
     void loadRepos(org.login);
   }
@@ -288,6 +303,7 @@ export function ImportFromGithubModal({
   function handleBackToOrgs() {
     setSelectedOrg(null);
     setSearch("");
+    setSelected(new Set());
     setStep("pick-org");
     setReposState({
       status: "idle",
@@ -297,51 +313,100 @@ export function ImportFromGithubModal({
     });
   }
 
+  function toggleSelect(fullName: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(fullName)) next.delete(fullName);
+      else next.add(fullName);
+      return next;
+    });
+  }
+
   async function handleImport(repo: GitHubRepoSummary) {
-    if (!selectedOrg) return;
+    if (!selectedOrg || bulk.active) return;
     if (imported[repo.fullName] === "done" || imported[repo.fullName] === "pending") {
       return;
     }
+    await importOne(repo, selectedOrg.login);
+  }
 
+  // ── Bulk import ────────────────────────────────────────────────────
+
+  // Sequential, not parallel: GitHub's API has user rate limits and
+  // serial keeps progress predictable for the user. Errors don't halt
+  // the run — each repo's outcome is recorded in `imported` and the
+  // user sees per-row ✓ / error after.
+  async function importOne(
+    repo: GitHubRepoSummary,
+    orgLogin: string,
+  ): Promise<"ok" | "fatal"> {
     setImported((prev) => ({ ...prev, [repo.fullName]: "pending" }));
     try {
       const res = await importRepo({
-        githubOrgLogin: selectedOrg.login,
+        githubOrgLogin: orgLogin,
         repoFullName: repo.fullName,
       });
-      // 201 = novo, 200 = idempotente "já estava importado". Para o
-      // user é a mesma coisa: o repo agora está na lista do dashboard.
       if (res.status === 201 || res.status === 200) {
         setImported((prev) => ({ ...prev, [repo.fullName]: "done" }));
         onImported();
-        return;
+        return "ok";
       }
       if (res.status === 401) {
         router.push("/login");
-        return;
+        return "fatal";
       }
       const apiErr = parseApiError(res);
       if (res.status === 403 && apiErr?.error === "github_not_connected") {
         await refreshConnect();
         setStep("needs-connect");
-        return;
+        return "fatal";
       }
       const message =
         apiErr?.message ??
         (res.status >= 500
-          ? "Erro ao falar com o GitHub. Tente novamente em alguns segundos."
+          ? "Erro ao falar com o GitHub. Tente novamente."
           : `Erro ${res.status} ao importar.`);
-      setImported((prev) => ({ ...prev, [repo.fullName]: { error: message } }));
+      setImported((prev) => ({
+        ...prev,
+        [repo.fullName]: { error: message },
+      }));
+      return "ok";
     } catch (err) {
       console.error("POST /api/repos/import falhou", err);
       setImported((prev) => ({
         ...prev,
-        [repo.fullName]: {
-          error:
-            "Falha de rede ao importar. Verifique sua conexão e tente novamente.",
-        },
+        [repo.fullName]: { error: "Falha de rede ao importar." },
       }));
+      return "ok";
     }
+  }
+
+  async function handleBulkImport() {
+    if (!selectedOrg || bulk.active) return;
+    // Snapshot pegs the order at click time; a search filter change
+    // mid-import won't shift the queue. Skip already-done items.
+    const queue = reposState.repos.filter(
+      (r) => selected.has(r.fullName) && imported[r.fullName] !== "done",
+    );
+    if (queue.length === 0) return;
+
+    setBulk({ total: queue.length, done: 0, active: true });
+    for (let i = 0; i < queue.length; i++) {
+      const result = await importOne(queue[i], selectedOrg.login);
+      if (result === "fatal") {
+        setBulk({ total: queue.length, done: i, active: false });
+        return;
+      }
+      setBulk({ total: queue.length, done: i + 1, active: true });
+    }
+    setBulk({ total: queue.length, done: queue.length, active: false });
+    // Drop the imported items from the selection so the toolbar count
+    // reflects what's still actionable.
+    setSelected((prev) => {
+      const next = new Set(prev);
+      queue.forEach((r) => next.delete(r.fullName));
+      return next;
+    });
   }
 
   // ── Filter ─────────────────────────────────────────────────────────
@@ -436,6 +501,19 @@ export function ImportFromGithubModal({
               onSearchChange={setSearch}
               filteredRepos={filteredRepos}
               imported={imported}
+              selected={selected}
+              onToggleSelect={toggleSelect}
+              onSelectAllVisible={() => {
+                setSelected((prev) => {
+                  const next = new Set(prev);
+                  filteredRepos.forEach((r) => {
+                    if (imported[r.fullName] !== "done") next.add(r.fullName);
+                  });
+                  return next;
+                });
+              }}
+              onClearSelection={() => setSelected(new Set())}
+              bulkActive={bulk.active}
               onImport={handleImport}
               onRetry={() => void loadRepos(selectedOrg.login)}
               onReconnect={handleConnectGithub}
@@ -471,13 +549,28 @@ export function ImportFromGithubModal({
               </button>
             )}
           </div>
-          <button
-            type="button"
-            onClick={handleClose}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition"
-          >
-            Concluído
-          </button>
+          <div className="flex items-center gap-3">
+            {step === "pick-repo" && (selected.size > 0 || bulk.active) && (
+              <button
+                type="button"
+                onClick={handleBulkImport}
+                disabled={bulk.active || selected.size === 0}
+                className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition disabled:opacity-60 disabled:cursor-not-allowed"
+              >
+                {bulk.active
+                  ? `Importando ${bulk.done}/${bulk.total}…`
+                  : `Importar ${selected.size} selecionado${selected.size === 1 ? "" : "s"}`}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleClose}
+              disabled={bulk.active}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              Concluído
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -603,6 +696,11 @@ function PickRepoStep({
   onSearchChange,
   filteredRepos,
   imported,
+  selected,
+  onToggleSelect,
+  onSelectAllVisible,
+  onClearSelection,
+  bulkActive,
   onImport,
   onRetry,
   onReconnect,
@@ -612,6 +710,11 @@ function PickRepoStep({
   onSearchChange: (v: string) => void;
   filteredRepos: GitHubRepoSummary[];
   imported: ImportedMap;
+  selected: Set<string>;
+  onToggleSelect: (fullName: string) => void;
+  onSelectAllVisible: () => void;
+  onClearSelection: () => void;
+  bulkActive: boolean;
   onImport: (repo: GitHubRepoSummary) => void;
   onRetry: () => void;
   onReconnect: () => void;
@@ -635,6 +738,16 @@ function PickRepoStep({
       />
     );
   }
+  // How many of the currently-visible (post-search) rows are selectable
+  // (i.e., not already imported). Drives the toolbar's "Selecionar todos"
+  // affordance — when zero, the action is meaningless.
+  const visibleSelectable = filteredRepos.filter(
+    (r) => imported[r.fullName] !== "done",
+  );
+  const allVisibleSelected =
+    visibleSelectable.length > 0 &&
+    visibleSelectable.every((r) => selected.has(r.fullName));
+
   return (
     <>
       <div className="mb-3">
@@ -651,6 +764,37 @@ function PickRepoStep({
           className="w-full px-4 py-2 border border-neutral-300 rounded-md text-sm bg-white focus:border-saint focus:outline-none transition"
         />
       </div>
+      {state.repos.length > 0 && (
+        <div className="mb-3 flex items-center justify-between gap-3 text-sm">
+          <span className="text-neutral-600">
+            {selected.size === 0
+              ? `${visibleSelectable.length} disponíve${visibleSelectable.length === 1 ? "l" : "is"} para importar`
+              : `${selected.size} selecionado${selected.size === 1 ? "" : "s"}`}
+          </span>
+          <div className="flex items-center gap-2">
+            {selected.size > 0 && (
+              <button
+                type="button"
+                onClick={onClearSelection}
+                disabled={bulkActive}
+                className="text-neutral-700 hover:text-ink underline underline-offset-2 disabled:opacity-50"
+              >
+                Limpar seleção
+              </button>
+            )}
+            {visibleSelectable.length > 0 && (
+              <button
+                type="button"
+                onClick={allVisibleSelected ? onClearSelection : onSelectAllVisible}
+                disabled={bulkActive}
+                className="text-neutral-700 hover:text-ink underline underline-offset-2 disabled:opacity-50"
+              >
+                {allVisibleSelected ? "Desmarcar todos" : "Selecionar todos"}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {state.repos.length === 0 ? (
         <div className="bg-white border border-dashed border-neutral-300 rounded-lg p-8 text-center">
           <p className="text-base font-semibold text-ink">
@@ -673,6 +817,9 @@ function PickRepoStep({
               <RepoRow
                 repo={repo}
                 state={imported[repo.fullName]}
+                isSelected={selected.has(repo.fullName)}
+                onToggleSelect={() => onToggleSelect(repo.fullName)}
+                bulkActive={bulkActive}
                 onImport={() => onImport(repo)}
               />
             </li>
@@ -686,10 +833,16 @@ function PickRepoStep({
 function RepoRow({
   repo,
   state,
+  isSelected,
+  onToggleSelect,
+  bulkActive,
   onImport,
 }: {
   repo: GitHubRepoSummary;
   state: ImportedMap[string] | undefined;
+  isSelected: boolean;
+  onToggleSelect: () => void;
+  bulkActive: boolean;
   onImport: () => void;
 }) {
   const isPending = state === "pending";
@@ -700,8 +853,20 @@ function RepoRow({
       : null;
 
   return (
-    <article className="bg-white border border-neutral-200 rounded-lg">
+    <article
+      className={`bg-white border rounded-lg transition ${isSelected ? "border-saint/60 ring-1 ring-saint/20" : "border-neutral-200"}`}
+    >
       <div className="flex items-center gap-3 p-3">
+        {!isDone && (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={onToggleSelect}
+            disabled={bulkActive || isPending}
+            aria-label={`Selecionar ${repo.fullName}`}
+            className="w-4 h-4 accent-saint cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+          />
+        )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-semibold text-ink truncate">
@@ -743,10 +908,10 @@ function RepoRow({
           <button
             type="button"
             onClick={onImport}
-            disabled={isPending}
-            className="inline-flex items-center justify-center gap-2 px-4 h-9 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            disabled={isPending || bulkActive}
+            className="inline-flex items-center justify-center gap-2 px-4 h-9 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           >
-            {isPending ? "Importando…" : "Importar"}
+            {isPending ? "Importando…" : "Importar só este"}
           </button>
         )}
       </div>

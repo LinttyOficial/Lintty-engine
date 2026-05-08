@@ -40,8 +40,8 @@
  */
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SkipLink } from "@/components/SkipLink";
@@ -107,7 +107,6 @@ const STATUS_META: Record<ScanStatus, { label: string; cls: string }> = {
 
 export default function ScanDetailPage() {
   const router = useRouter();
-  const params = useParams<{ publicId: string }>();
   const { isLoading: authLoading, isAuthenticated, networkError } = useAuth();
 
   useEffect(() => {
@@ -116,15 +115,28 @@ export default function ScanDetailPage() {
     }
   }, [authLoading, isAuthenticated, networkError, router]);
 
-  // Valida UUID v4 client-side. Ids malformados (placeholder `_` do
-  // export estático, URL adulterada, etc.) caem em "not found" sem
-  // round-trip.
-  const publicId = useMemo<string | null>(() => {
-    const raw = params?.publicId;
-    if (typeof raw !== "string") return null;
-    if (!UUID_V4_REGEX.test(raw)) return null;
-    return raw.toLowerCase();
-  }, [params]);
+  // Read publicId from window.location.pathname. With output: "export"
+  // + generateStaticParams(["_"]), useParams() returns the build-time
+  // placeholder "_" forever — never the runtime URL segment. After the
+  // ASP.NET SPA fallback rewrites /dashboard/scans/<uuid> to the
+  // placeholder html, window.location is the only source of the real
+  // segment. undefined = pre-hydration, null = invalid, string = ready.
+  const [publicId, setPublicId] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    const m = window.location.pathname.match(
+      /^\/dashboard\/scans\/([^/]+)\/?$/,
+    );
+    if (!m) {
+      setPublicId(null);
+      return;
+    }
+    const raw = m[1];
+    if (!UUID_V4_REGEX.test(raw)) {
+      setPublicId(null);
+      return;
+    }
+    setPublicId(raw.toLowerCase());
+  }, []);
 
   return (
     <>
@@ -134,7 +146,9 @@ export default function ScanDetailPage() {
         {authLoading && <PageSkeleton />}
         {!authLoading && networkError && <NetworkErrorState />}
         {!authLoading && !networkError && isAuthenticated && (
-          publicId === null ? (
+          publicId === undefined ? (
+            <PageSkeleton />
+          ) : publicId === null ? (
             <NotFoundState />
           ) : (
             <ScanDetailBody publicId={publicId} />
