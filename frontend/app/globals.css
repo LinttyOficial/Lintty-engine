@@ -216,6 +216,11 @@ pre.snippet-dark .prompt {
   padding: 1.5rem;
   box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.25);
 }
+/* Wider variant for list-shaped flows (e.g. import GitHub repos in F4),
+   where 28rem cuts off org names and repo descriptions. */
+.lt-modal-wide {
+  max-width: 42rem;
+}
 
 /* ===== Dashboard: avatar, dropdown, skeleton ===== */
 .lt-avatar {
