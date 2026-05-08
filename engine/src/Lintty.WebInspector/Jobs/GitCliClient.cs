@@ -43,8 +43,15 @@ public sealed class GitCliClient : IGitClient
         if (!string.IsNullOrEmpty(parent)) Directory.CreateDirectory(parent);
 
         var psi = BuildCloneProcessStartInfo(coords, reference, token, destination);
-        _logger.LogInformation("git clone {Owner}/{Repo} ref={Ref} -> {Dest}",
-            coords.Owner, coords.Repo, reference ?? "<default>", destination);
+        // Log line uses CloneUrlForLog so an authenticated clone surfaces as
+        // "https://x-access-token:***@github.com/owner/repo.git" — visibly
+        // distinct from anonymous, never the literal token (Apêndice E §E.13 / E4).
+        // Owner/Repo/Dest stay structured so log aggregation indexes them as
+        // first-class fields.
+        _logger.LogInformation(
+            "git clone {Owner}/{Repo} ref={Ref} url={SafeUrl} -> {Dest}",
+            coords.Owner, coords.Repo, reference ?? "<default>",
+            coords.CloneUrlForLog(token), destination);
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
         var stderrBuf = new StringBuilder();

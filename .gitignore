@@ -101,6 +101,12 @@ engine/src/Lintty.WebInspector/var/lintty/*.sqlite
 engine/src/Lintty.WebInspector/var/lintty/*.sqlite-shm
 engine/src/Lintty.WebInspector/var/lintty/*.sqlite-wal
 
+# === DataProtection key ring (ADR 0007 Apêndice E §E.6) — sealed XML keys ===
+# Keys decrypt persisted github_user_tokens.encrypted_token. Treat as a
+# secret: never commit, but also don't delete in dev or every connected
+# user has to reconnect.
+engine/src/Lintty.WebInspector/var/lintty/data-protection/
+
 # === Frontend (Next.js) ===
 frontend/node_modules/
 frontend/.next/

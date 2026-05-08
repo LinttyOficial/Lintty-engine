@@ -6,6 +6,7 @@ using AspNet.Security.OAuth.GitHub;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Authentication.OAuth;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Rewrite;
@@ -42,8 +43,12 @@ namespace Lintty.WebInspector;
 ///   POST /api/auth/login            – Sprint 2
 ///   POST /api/auth/logout           – Sprint 2
 ///   GET  /api/auth/me               – Sprint 2
-///   GET  /api/auth/github/start     – Sprint 2 (OAuth GitHub)
+///   GET  /api/auth/github/start     – Sprint 2 (OAuth GitHub login, scopes mínimos)
 ///   GET  /api/auth/github/callback  – Sprint 2
+///   GET  /api/auth/github/connect/start    – Sprint 3 PR 6 (OAuth elevated, repo + read:org)
+///   GET  /api/auth/github/connect/callback – Sprint 3 PR 6
+///   GET  /api/auth/github/connect          – Sprint 3 PR 6 (status — privacy console)
+///   DELETE /api/auth/github/connect        – Sprint 3 PR 6 (soft-revoke local)
 ///   POST /api/repos                 – ADR 0007 Sprint 3 PR 3 (manual add)
 ///   GET  /api/repos                 – Sprint 3 PR 3 (list)
 ///   GET  /api/repos/{id}            – Sprint 3 PR 3 (detail)
@@ -211,6 +216,47 @@ public class Program
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<ITenantContext, TenantContext>();
         builder.Services.AddHttpClient<IGitHubOAuthClient, GitHubOAuthClient>(GitHubOAuthClient.HttpClientName);
+
+        // ADR 0007 Apêndice E §E.6 — DataProtection for the connect-flow
+        // OAuth user-token. Keys persist on disk under
+        // {JobStorage:Root}/data-protection so a single-instance deploy
+        // (V1.0 default) survives restarts; multi-instance deploys upgrade
+        // to Azure Key Vault / GCP KMS in V1.1 (pendência E1).
+        // SetApplicationName is mandatory — without it, two Lintty processes
+        // with different assembly names would generate distinct keyrings and
+        // existing ciphertext would become unreadable.
+        builder.Services.AddDataProtection()
+            .SetApplicationName("Lintty.WebInspector")
+            .PersistKeysToFileSystem(new DirectoryInfo(ResolveDataProtectionDir(builder)));
+
+        // Per-user GitHub OAuth token store (Apêndice E §E.6). Scoped
+        // because it holds an EF DbContext (also scoped). The protector it
+        // uses is resolved through IDataProtectionProvider, which is a
+        // singleton — fine to share across scopes.
+        builder.Services.AddScoped<IGitHubUserTokenStore, GithubUserTokenStore>();
+    }
+
+    /// <summary>
+    /// Computes the on-disk path for DataProtection keys. Honors an
+    /// explicit override (<c>JobStorage:DataProtectionDir</c>) and otherwise
+    /// nests under <c>{JobStorage:Root}/data-protection</c>. The directory
+    /// is created if missing — DataProtection asserts the parent exists.
+    /// </summary>
+    private static string ResolveDataProtectionDir(WebApplicationBuilder builder)
+    {
+        var cfg = builder.Configuration.GetSection(JobStorageOptions.SectionName);
+        var root = cfg["Root"];
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            // Mirror JobStorageOptions default exactly.
+            root = "var/lintty";
+        }
+        var resolved = Path.IsPathRooted(root)
+            ? root
+            : Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, root));
+        var dir = Path.Combine(resolved, "data-protection");
+        Directory.CreateDirectory(dir);
+        return dir;
     }
 
     private static void RegisterJobsInfrastructure(IServiceCollection services)
@@ -343,6 +389,7 @@ public class Program
         app.MapHealth();
         app.MapJobs();
         app.MapAuth();
+        app.MapAuthGithubConnect();
         app.MapRepos();
         app.MapScans();
     }

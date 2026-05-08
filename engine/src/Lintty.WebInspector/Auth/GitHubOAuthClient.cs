@@ -38,6 +38,13 @@ public sealed class GitHubOAuthClient : IGitHubOAuthClient
 
     public async Task<string> ExchangeCodeForTokenAsync(string code, string redirectUri, CancellationToken ct)
     {
+        var grant = await ExchangeCodeForTokenWithScopesAsync(code, redirectUri, ct).ConfigureAwait(false);
+        return grant.AccessToken;
+    }
+
+    public async Task<GitHubTokenGrant> ExchangeCodeForTokenWithScopesAsync(
+        string code, string redirectUri, CancellationToken ct)
+    {
         if (string.IsNullOrWhiteSpace(_opts.ClientId) || string.IsNullOrWhiteSpace(_opts.ClientSecret))
             throw new InvalidOperationException("GitHub OAuth credentials are not configured.");
 
@@ -63,7 +70,21 @@ public sealed class GitHubOAuthClient : IGitHubOAuthClient
         if (string.IsNullOrEmpty(payload.AccessToken))
             throw new InvalidOperationException(
                 $"GitHub OAuth code exchange failed: error={payload.Error} description={payload.ErrorDescription}");
-        return payload.AccessToken;
+
+        return new GitHubTokenGrant(payload.AccessToken, ParseScopes(payload.Scope));
+    }
+
+    /// <summary>
+    /// Parses the CSV scope string GitHub returns in the access-token
+    /// response (e.g. <c>"repo,read:org"</c>) into a normalized array.
+    /// Empty / null input → empty array. Whitespace around commas is
+    /// tolerated.
+    /// </summary>
+    internal static string[] ParseScopes(string? scopeCsv)
+    {
+        if (string.IsNullOrWhiteSpace(scopeCsv)) return Array.Empty<string>();
+        var parts = scopeCsv.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return parts;
     }
 
     public async Task<GitHubUserProfile> GetUserAsync(string accessToken, CancellationToken ct)

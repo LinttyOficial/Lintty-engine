@@ -13,13 +13,31 @@ public sealed record GitHubRepoCoordinates(string Owner, string Repo, Uri Normal
     public string ApiUrl => $"https://api.github.com/repos/{Owner}/{Repo}";
 
     /// <summary>
-    /// HTTPS clone URL. Tokens (PATs) are injected by the caller, never persisted.
+    /// HTTPS clone URL. Tokens (PATs / OAuth user tokens) are injected by the
+    /// caller, never persisted. The authenticated form uses the
+    /// <c>x-access-token</c> username — GitHub's documented contract for
+    /// OAuth-app and GitHub-App tokens (Apêndice E §E.9). The <c>oauth2</c>
+    /// alias also works historically but the spec form is preferred.
     /// </summary>
     public string CloneUrl(string? token)
     {
         if (string.IsNullOrEmpty(token))
             return $"https://github.com/{Owner}/{Repo}.git";
-        return $"https://oauth2:{token}@github.com/{Owner}/{Repo}.git";
+        return $"https://x-access-token:{token}@github.com/{Owner}/{Repo}.git";
+    }
+
+    /// <summary>
+    /// Same shape as <see cref="CloneUrl"/> but with the token literal masked.
+    /// Used in log lines so an authenticated clone is visibly distinct from
+    /// an anonymous one without leaking the secret. The mask placeholder is
+    /// the literal string <c>***</c> — checked verbatim by the masking test
+    /// (Apêndice E §E.13 / E4).
+    /// </summary>
+    public string CloneUrlForLog(string? token)
+    {
+        if (string.IsNullOrEmpty(token))
+            return $"https://github.com/{Owner}/{Repo}.git";
+        return $"https://x-access-token:***@github.com/{Owner}/{Repo}.git";
     }
 }
 
