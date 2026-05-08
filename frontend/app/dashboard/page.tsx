@@ -7,11 +7,11 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SkipLink } from "@/components/SkipLink";
 import { useAuth } from "@/lib/auth";
+import { ReposSection } from "./components/ReposSection";
 
 export default function DashboardPage() {
   const router = useRouter();
-  const { user, currentOrg, memberships, isLoading, isAuthenticated, networkError } =
-    useAuth();
+  const { currentOrg, isLoading, isAuthenticated, networkError } = useAuth();
 
   // Auth gate — anonymous users get bounced to /login.
   useEffect(() => {
@@ -27,13 +27,8 @@ export default function DashboardPage() {
       <main id="main" className="px-6 py-12 md:py-16">
         {isLoading && <LoadingSkeleton />}
         {!isLoading && networkError && <NetworkErrorState />}
-        {!isLoading && !networkError && isAuthenticated && user && (
-          <ReadyState
-            displayName={user.displayName ?? user.email ?? "Usuário"}
-            orgName={currentOrg?.name ?? "sem organização"}
-            currentOrgId={currentOrg?.id}
-            memberships={memberships}
-          />
+        {!isLoading && !networkError && isAuthenticated && (
+          <ReposSection orgName={currentOrg?.name ?? "sua organização"} />
         )}
       </main>
       <Footer />
@@ -94,129 +89,6 @@ function NetworkErrorState() {
           </Link>
         </div>
       </div>
-    </section>
-  );
-}
-
-interface ReadyStateProps {
-  displayName: string;
-  orgName: string;
-  currentOrgId?: string;
-  memberships: Array<{ org?: { id?: string; name?: string }; role?: string; name?: string }>;
-}
-
-function ReadyState({
-  displayName,
-  orgName,
-  currentOrgId,
-  memberships,
-}: ReadyStateProps) {
-  const firstName = String(displayName).split(/\s+/)[0] || displayName;
-  const showMemberships = memberships.length > 1;
-
-  return (
-    <section className="max-w-3xl mx-auto">
-      <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-3">
-        Dashboard &middot; Beta
-      </p>
-      <h1 className="text-3xl md:text-4xl font-bold tracking-tight">
-        Olá, <span>{firstName}</span>.
-      </h1>
-      <p className="mt-3 text-neutral-700">
-        Você está em <strong className="text-ink">{orgName}</strong>.
-      </p>
-
-      <article className="mt-10 bg-white border border-neutral-200 rounded-xl p-6 md:p-8 shadow-sm">
-        <p className="text-xs font-semibold tracking-widest text-saint uppercase">Roadmap</p>
-        <h2 className="mt-2 text-xl font-bold tracking-tight">Em construção — Sprint 3</h2>
-        <p className="mt-3 text-neutral-700 text-sm leading-relaxed">
-          Este dashboard ainda é um placeholder. As próximas entregas incluem:
-        </p>
-        <ul className="mt-4 space-y-2 text-sm text-neutral-700">
-          <li className="flex gap-3">
-            <span className="text-saint mt-0.5" aria-hidden="true">→</span>
-            <span>
-              Scans org-bound — laudos vinculados à sua organização, com membros vendo o
-              histórico compartilhado.
-            </span>
-          </li>
-          <li className="flex gap-3">
-            <span className="text-saint mt-0.5" aria-hidden="true">→</span>
-            <span>
-              Gestão de repositórios — conecte o GitHub via OAuth e dispare scans direto
-              pela UI.
-            </span>
-          </li>
-          <li className="flex gap-3">
-            <span className="text-saint mt-0.5" aria-hidden="true">→</span>
-            <span>
-              Histórico de laudos — todos os PDFs anteriores acessíveis com hash auditável.
-            </span>
-          </li>
-          <li className="flex gap-3">
-            <span className="text-saint mt-0.5" aria-hidden="true">→</span>
-            <span>Convite de membros e roles (owner, admin, member, viewer).</span>
-          </li>
-        </ul>
-
-        <div className="mt-8 border-t border-neutral-200 pt-6">
-          <p className="text-sm font-semibold text-ink">Por enquanto, você pode:</p>
-          <div className="mt-4 grid sm:grid-cols-2 gap-3">
-            <Link
-              href="/inspect"
-              className="block bg-paper border border-neutral-200 rounded-lg p-4 hover:border-saint hover:bg-saint-bg transition"
-            >
-              <p className="font-semibold text-ink">Web Inspector anônimo</p>
-              <p className="mt-1 text-xs text-neutral-600">
-                Cole uma URL pública do GitHub e receba o laudo PDF.
-              </p>
-            </Link>
-            <Link
-              href="/cli"
-              className="block bg-paper border border-neutral-200 rounded-lg p-4 hover:border-saint hover:bg-saint-bg transition"
-            >
-              <p className="font-semibold text-ink">CLI local</p>
-              <p className="mt-1 text-xs text-neutral-600">
-                Roda no seu equipamento. Código nunca sai da sua máquina.
-              </p>
-            </Link>
-          </div>
-        </div>
-      </article>
-
-      {showMemberships && (
-        <article className="mt-6 bg-white border border-neutral-200 rounded-xl p-6 md:p-8 shadow-sm">
-          <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase">
-            Suas organizações
-          </p>
-          <ul className="mt-3 divide-y divide-neutral-100">
-            {memberships.map((m, idx) => {
-              const mOrgName = m.org?.name ?? m.name ?? "—";
-              const role = m.role ?? "member";
-              const isCurrent = m.org?.id === currentOrgId;
-              return (
-                <li
-                  key={(m.org?.id ?? mOrgName) + idx}
-                  className="flex items-center justify-between py-2"
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-ink">
-                      {mOrgName}
-                      {isCurrent && (
-                        <span className="ml-1 text-xs text-saint">(ativa)</span>
-                      )}
-                    </p>
-                    <p className="text-xs text-neutral-500">{role}</p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-          <p className="mt-4 text-xs text-neutral-500">
-            Trocar de organização ativa entra no Sprint 3.
-          </p>
-        </article>
-      )}
     </section>
   );
 }
