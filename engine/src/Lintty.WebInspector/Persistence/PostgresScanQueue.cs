@@ -86,7 +86,8 @@ public sealed class PostgresScanQueue : IScanQueue
                 c.""ref""           AS ""ref"",
                 c.canon_version   AS canon_version,
                 r.is_private      AS is_private,
-                r.added_by_user_id AS added_by_user_id
+                r.added_by_user_id AS added_by_user_id,
+                r.scan_projects   AS scan_projects
             FROM claimed c
             JOIN repos r ON r.id = c.repo_id;
         ";
@@ -105,7 +106,8 @@ public sealed class PostgresScanQueue : IScanQueue
             Ref: row.@ref,
             CanonVersion: row.canon_version,
             IsPrivate: row.is_private,
-            AddedByUserId: row.added_by_user_id);
+            AddedByUserId: row.added_by_user_id,
+            ScanProjects: row.scan_projects);
     }
 
     public async Task MarkCompletedAsync(long scanId, string hashContent, CancellationToken ct)
@@ -174,6 +176,7 @@ public sealed class PostgresScanQueue : IScanQueue
         public string canon_version { get; set; } = string.Empty;
         public bool is_private { get; set; }
         public long added_by_user_id { get; set; }
+        public string[]? scan_projects { get; set; }
     }
 #pragma warning restore IDE1006, CA1707, SA1300
 }

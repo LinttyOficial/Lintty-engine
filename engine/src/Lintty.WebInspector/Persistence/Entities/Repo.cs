@@ -71,4 +71,30 @@ public sealed class Repo
     /// <summary>Soft-delete timestamp. <c>null</c> means active. Historic
     /// scans referencing this repo remain queryable.</summary>
     public DateTime? DeletedAt { get; set; }
+
+    /// <summary>
+    /// User-curated scan target paths (Sprint 3 PR S1). Each entry is a
+    /// repo-relative POSIX path (forward slashes, no leading <c>./</c>) to a
+    /// <c>.sln</c>, <c>.csproj</c>, or <c>lintty.yml</c>.
+    /// <para>
+    /// Semantics consumed by <see cref="Lintty.WebInspector.Jobs.JobWorker"/>:
+    /// </para>
+    /// <list type="bullet">
+    ///   <item><description><c>null</c> or empty → auto-detect (current
+    ///         behaviour: <see cref="Lintty.Engine.Core.Workspace.TargetResolver"/>
+    ///         picks the .sln, lintty.yml, or single .csproj).</description></item>
+    ///   <item><description>Single <c>.sln</c> entry → analyze that solution.</description></item>
+    ///   <item><description>Single <c>.csproj</c> entry → analyze that project.</description></item>
+    ///   <item><description>Single <c>lintty.yml</c> entry → use the yml's
+    ///         <c>projects:</c> list.</description></item>
+    ///   <item><description>2+ <c>.csproj</c> entries → the worker writes a
+    ///         throwaway <c>.lintty-runtime.yml</c> in the sandbox declaring
+    ///         this list, then targets that yml.</description></item>
+    /// </list>
+    /// Validation (combinations + path-not-in-candidates rejection) happens at
+    /// the PUT endpoint via <c>IRepoPreflightService.SetScanProjectsAsync</c>;
+    /// the worker trusts the column blindly because the candidate set was
+    /// validated before persistence.
+    /// </summary>
+    public string[]? ScanProjects { get; set; }
 }

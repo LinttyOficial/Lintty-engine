@@ -166,6 +166,11 @@ public sealed class LinttyDbContext : IdentityDbContext<User, Role, long>
             b.Property(r => r.IsPrivate).HasDefaultValue(false);
             b.Property(r => r.CreatedAt).HasDefaultValueSql("now() at time zone 'utc'");
 
+            // Sprint 3 PR S1 — user-curated scan target. Nullable text[] so a
+            // repo without a saved selection (the default) keeps its current
+            // auto-detect behaviour. Npgsql maps string[] to text[] natively.
+            b.Property(r => r.ScanProjects).HasColumnType("text[]");
+
             b.HasOne(r => r.Org)
                 .WithMany()
                 .HasForeignKey(r => r.OrgId)

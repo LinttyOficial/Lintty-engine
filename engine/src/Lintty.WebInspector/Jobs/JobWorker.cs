@@ -565,11 +565,19 @@ public sealed class JobWorker : BackgroundService
             }
 
             // ── 2. Resolve target via in-process resolver (ADR 0006) ────
+            // Sprint 3 PR S1: honor user-curated repos.scan_projects when
+            // the column is non-empty. Validation happened at PUT time
+            // (IRepoPreflightService.SetScanProjectsAsync); the worker
+            // trusts the column blindly EXCEPT for the path-traversal
+            // re-check below, because the column was written before the
+            // current sandbox existed and a malicious operator with DB
+            // access shouldn't be able to escape via an absolute path.
             string targetPath;
             try
             {
+                var targetArg = await ResolveScanTargetArgAsync(scan.ScanProjects, repoDir, ct).ConfigureAwait(false);
                 var resolved = TargetResolver.Resolve(
-                    targetArg: null,
+                    targetArg: targetArg,
                     cwd: repoDir,
                     mode: TargetResolverMode.WebInspector);
                 targetPath = resolved.SolutionPathForReporting;
@@ -659,6 +667,91 @@ public sealed class JobWorker : BackgroundService
                 "scan clone purged at {Time}",
                 DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
         }
+    }
+
+    /// <summary>
+    /// Sprint 3 PR S1 — turn the snapshotted <c>repos.scan_projects</c>
+    /// list into a <c>targetArg</c> for <see cref="TargetResolver"/>.
+    /// <list type="bullet">
+    ///   <item><description><c>null</c> / empty → return <c>null</c>;
+    ///         resolver runs auto-detect (current behaviour).</description></item>
+    ///   <item><description>1 entry → resolve to an absolute path inside
+    ///         <paramref name="repoDir"/>. Anti-traversal: the absolute path
+    ///         must remain rooted in <paramref name="repoDir"/>; otherwise
+    ///         we throw a <see cref="TargetResolutionException"/> with the
+    ///         <c>InvalidProjectsEntry</c> code so the existing failure
+    ///         path persists the right structured error.</description></item>
+    ///   <item><description>2+ entries (assumed all <c>.csproj</c> by the
+    ///         time they hit the column — the PUT endpoint validates the
+    ///         combination) → write a transient <c>.lintty-runtime.yml</c>
+    ///         in <paramref name="repoDir"/> declaring the project list,
+    ///         then return that yaml path. The yaml is ephemeral; the
+    ///         sandbox-purge in the <c>finally</c> block of
+    ///         <see cref="RunScanAsync"/> wipes it along with the rest of
+    ///         the clone.</description></item>
+    /// </list>
+    /// </summary>
+    private static async Task<string?> ResolveScanTargetArgAsync(
+        string[]? scanProjects,
+        string repoDir,
+        CancellationToken ct)
+    {
+        if (scanProjects is null || scanProjects.Length == 0) return null;
+
+        var repoDirAbs = Path.GetFullPath(repoDir);
+        var sep = Path.DirectorySeparatorChar;
+        var repoDirAbsWithSep = repoDirAbs.TrimEnd(sep) + sep;
+
+        if (scanProjects.Length == 1)
+        {
+            var single = scanProjects[0];
+            var combined = Path.GetFullPath(Path.Combine(repoDirAbs, single));
+            if (!(combined + sep).StartsWith(repoDirAbsWithSep, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new TargetResolutionException(
+                    TargetResolutionErrorCode.InvalidProjectsEntry,
+                    $"scan_projects path '{single}' escapes the repo root.");
+            }
+            return combined;
+        }
+
+        // 2+ entries — write a throwaway yaml. The PUT endpoint already
+        // refused mixed sln+csproj combos, so by the time we get here the
+        // list is all-.csproj. Defensive validation: yaml writer just
+        // forwards whatever paths it got, but each must stay inside the
+        // repo (anti-traversal) and use forward slashes (the resolver's
+        // yaml parser is path-separator agnostic but the file content
+        // should be canonical POSIX for diffability).
+        var validated = new System.Collections.Generic.List<string>(scanProjects.Length);
+        foreach (var entry in scanProjects)
+        {
+            if (string.IsNullOrWhiteSpace(entry)) continue;
+            var combined = Path.GetFullPath(Path.Combine(repoDirAbs, entry));
+            if (!(combined + sep).StartsWith(repoDirAbsWithSep, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new TargetResolutionException(
+                    TargetResolutionErrorCode.InvalidProjectsEntry,
+                    $"scan_projects path '{entry}' escapes the repo root.");
+            }
+            validated.Add(entry.Replace('\\', '/'));
+        }
+
+        var yamlPath = Path.Combine(repoDirAbs, ".lintty-runtime.yml");
+        var sb = new System.Text.StringBuilder(64 + 32 * validated.Count);
+        sb.AppendLine("# Generated by Lintty Web Inspector. Lifetime: this scan only.");
+        sb.AppendLine("# Discarded with the rest of the sandbox after the worker finishes.");
+        sb.AppendLine("canon_version: 1.0.0");
+        sb.AppendLine("projects:");
+        foreach (var p in validated)
+        {
+            // YAML safe — paths are repo-relative ASCII. Single-quote
+            // anyway in case a path ever contains a colon (Windows drive
+            // letter scenarios are blocked by the traversal check above
+            // but defense in depth is cheap).
+            sb.Append("  - '").Append(p.Replace("'", "''", StringComparison.Ordinal)).AppendLine("'");
+        }
+        await File.WriteAllTextAsync(yamlPath, sb.ToString(), ct).ConfigureAwait(false);
+        return yamlPath;
     }
 
     /// <summary>

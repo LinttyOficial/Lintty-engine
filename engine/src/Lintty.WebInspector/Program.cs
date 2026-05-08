@@ -29,6 +29,7 @@ using Lintty.WebInspector.Jobs;
 using Lintty.WebInspector.Persistence;
 using Lintty.WebInspector.Persistence.Entities;
 using Lintty.WebInspector.Repos;
+using Lintty.WebInspector.Repos.Preflight;
 using Lintty.WebInspector.Scans;
 using Lintty.WebInspector.Validation;
 
@@ -57,6 +58,8 @@ namespace Lintty.WebInspector;
 ///   GET  /api/repos/{id}            – Sprint 3 PR 3 (detail)
 ///   DELETE /api/repos/{id}          – Sprint 3 PR 3 (soft-delete)
 ///   GET  /api/repos/{id}/scans      – Sprint 3 PR 4 (scan history)
+///   GET  /api/repos/{id}/preflight  – Sprint 3 PR S1 (discover scan candidates)
+///   PUT  /api/repos/{id}/scan-target – Sprint 3 PR S1 (persist user-curated target)
 ///   POST /api/scans                 – Sprint 3 PR 4 (trigger)
 ///   GET  /api/scans/{public_id}     – Sprint 3 PR 4 (poll)
 ///   GET  /api/scans/{public_id}/laudo.pdf  – Sprint 3 PR 4 (PDF)
@@ -305,6 +308,13 @@ public class Program
         // surface with ImportFromGithubOrgAsync (Apêndice E §E.8).
         services.AddScoped<IRepoService, RepoService>();
 
+        // ADR 0007 Sprint 3 / PR S1 — preflight + curated scan target.
+        // GitHub Tree API client (no clone). Distinct HttpClient pool from
+        // the orgs/metadata clients so the three GitHub surfaces (orgs,
+        // single-repo metadata, tree walks) don't share connection state.
+        services.AddHttpClient<IRepoTargetDiscovery, GitHubRepoTargetDiscovery>(GitHubRepoTargetDiscovery.HttpClientName);
+        services.AddScoped<IRepoPreflightService, RepoPreflightService>();
+
         // ADR 0007 Sprint 3 / PR 4 — org-bound scan lifecycle. Scoped (EF
         // DbContext). Canon version provider is a Singleton (pure function
         // of the host's configuration); will be swapped per-org/per-repo
@@ -453,6 +463,7 @@ public class Program
         app.MapAuthGithubConnect();
         app.MapGithub();
         app.MapRepos();
+        app.MapReposPreflight();
         app.MapScans();
     }
 

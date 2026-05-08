@@ -102,4 +102,13 @@ public sealed record ClaimedScan(
     string? Ref,
     string CanonVersion,
     bool IsPrivate,
-    long AddedByUserId);
+    long AddedByUserId,
+    string[]? ScanProjects)
+{
+    // ScanProjects (Sprint 3 PR S1): snapshot of repos.scan_projects at
+    // claim time. null / empty → auto-detect (current behaviour); 1 entry
+    // → single .sln/.csproj/lintty.yml target; 2+ entries (all .csproj) →
+    // worker writes a throwaway .lintty-runtime.yml in the sandbox. The
+    // column is validated at write time by IRepoPreflightService; the
+    // worker trusts it blindly.
+}

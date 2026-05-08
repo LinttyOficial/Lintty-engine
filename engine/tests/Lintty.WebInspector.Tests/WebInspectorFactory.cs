@@ -12,6 +12,7 @@ using Lintty.WebInspector.Auth;
 using Lintty.WebInspector.Canon;
 using Lintty.WebInspector.Github;
 using Lintty.WebInspector.Jobs;
+using Lintty.WebInspector.Repos.Preflight;
 using Lintty.WebInspector.Validation;
 using Lintty.WebInspector.Tests.Fakes;
 
@@ -43,6 +44,15 @@ public sealed class WebInspectorFactory : WebApplicationFactory<Program>
     /// empty so a test that doesn't care simply sees an empty list.
     /// </summary>
     public FakeGitHubOrgsClient FakeGitHubOrgs { get; } = new();
+
+    /// <summary>
+    /// Fake for <see cref="IRepoTargetDiscovery"/> — the GitHub Tree API
+    /// walker introduced in PR S1. Tests script discovery results keyed
+    /// by <c>"owner/name"</c> before issuing the preflight request;
+    /// defaults to "no candidates" so a test that only cares about the
+    /// happy path doesn't have to set anything up.
+    /// </summary>
+    public FakeRepoTargetDiscovery FakeRepoTargetDiscovery { get; } = new();
 
     /// <summary>
     /// When set, the factory wires GitHub OAuth credentials so the
@@ -147,6 +157,11 @@ public sealed class WebInspectorFactory : WebApplicationFactory<Program>
             // the LAST registration for a service type.
             RemoveAll<IGitHubOrgsClient>(services);
             services.AddSingleton<IGitHubOrgsClient>(FakeGitHubOrgs);
+
+            // Sprint 3 PR S1 — fake the Tree API walker too. Same
+            // last-registration-wins pattern as the orgs client.
+            RemoveAll<IRepoTargetDiscovery>(services);
+            services.AddSingleton<IRepoTargetDiscovery>(FakeRepoTargetDiscovery);
 
             if (GitClientOverride is not null)
             {

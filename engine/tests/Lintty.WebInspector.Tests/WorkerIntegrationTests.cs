@@ -575,6 +575,148 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
     }
 
     /// <summary>
+    /// ADR 0007 Sprint 3 / PR S1 cross-determinism gate for the
+    /// <i>user-curated</i> scan-target path. The two existing gates
+    /// (<see cref="Saint_Runs_End_To_End_And_Pdf_Matches_Cli_Direct_Invocation"/>
+    /// and <see cref="DashboardScan_Saint_Pdf_Equals_CliDirect"/>) cover the
+    /// auto-detect path; this test covers the new path where the user picks
+    /// a single .csproj from a multi-project repo with no .sln. The PDF the
+    /// worker generates must remain byte-identical to a CLI direct call
+    /// pointing <c>--target</c> at the same .csproj inside the same sandbox.
+    ///
+    /// <para>
+    /// Without this gate, a regression in <c>JobWorker.ResolveScanTargetArgAsync</c>
+    /// or <c>PostgresScanQueue</c>'s claim projection could silently
+    /// produce a different PDF than the CLI direct path — the entire
+    /// dashboard pitch ("same engine, same canon, same PDF") would
+    /// quietly drift. If this test ever fails, do NOT relax the
+    /// assertion. Trace what differs in the engine's input.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task DashboardScan_With_Saved_ScanProjects_Pdf_Equals_CliDirect_Same_Target()
+    {
+        await ResetAsync();
+        Assert.True(Directory.Exists(TestPaths.MultiCsprojFixture),
+            $"multi-csproj fixture missing: {TestPaths.MultiCsprojFixture}");
+        Assert.True(File.Exists(TestPaths.EngineCliDll),
+            $"Engine CLI dll missing at {TestPaths.EngineCliDll} — build Lintty.Engine.Cli first.");
+
+        // ── 1. Spin up the worker pointed at the multi-csproj fixture.
+        await using var factory = CreateFactory();
+        factory.DisableWorker = false;
+        factory.GitClientOverride = new FixtureCopyGitClient(TestPaths.MultiCsprojFixture);
+        var (client, orgId, userId) = await SignUpAndGetAuthedClientAsync(
+            factory, "scan-curated@example.com", "Curated Co");
+
+        // ── 2. Register a repo + persist the saved selection directly on
+        //      the row (the PUT endpoint has its own coverage in
+        //      RepoPreflightTests).
+        var add = await client.PostAsJsonAsync("/api/repos", new
+        {
+            githubUrl = "https://github.com/lintty-demo/multi-csproj",
+        });
+        add.EnsureSuccessStatusCode();
+        using var addDoc = JsonDocument.Parse(await add.Content.ReadAsStringAsync());
+        var repoId = addDoc.RootElement.GetProperty("id").GetInt64();
+
+        const string targetCsprojRelative = "src/ProjA/ProjA.Domain.csproj";
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<LinttyDbContext>();
+            var row = await db.Repos.FirstAsync(r => r.Id == repoId);
+            row.ScanProjects = new[] { targetCsprojRelative };
+            await db.SaveChangesAsync();
+        }
+
+        // ── 3. Trigger the scan via the service (same shortcut the
+        //      auto-detect gate uses). The worker's claim projection
+        //      will pick up scan_projects from repos.
+        Guid publicId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, gitRef: null, CancellationToken.None);
+            Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
+            publicId = trigger.Scan!.PublicId;
+        }
+
+        // ── 4. Wait for completion.
+        var completed = await WaitForScanStatusAsync(
+            factory, publicId, ScanStatus.Completed, TimeSpan.FromMinutes(3));
+        Assert.NotNull(completed);
+        Assert.Equal(ScanStatus.Completed, completed!.Status);
+
+        // ── 5. Pull the dashboard artifacts.
+        var pdfResp = await client.GetAsync($"/api/scans/{publicId:D}/laudo.pdf");
+        pdfResp.EnsureSuccessStatusCode();
+        var dashboardPdfBytes = await pdfResp.Content.ReadAsByteArrayAsync();
+        var dashboardPdfHash = Sha256Bytes(dashboardPdfBytes);
+
+        var jsonResp = await client.GetAsync($"/api/scans/{publicId:D}/report.json");
+        jsonResp.EnsureSuccessStatusCode();
+        var dashboardJsonBytes = await jsonResp.Content.ReadAsByteArrayAsync();
+        var dashboardJsonHash = Sha256Bytes(dashboardJsonBytes);
+
+        // ── 6. Run the SAME CLI dll directly against the SAME csproj in
+        //      a fresh sandbox (mirrors the worker's CloneRoot — the path
+        //      to the csproj must be identical to what the worker resolved
+        //      against, byte-for-byte, because solution_path is rendered
+        //      relative to a reporting base and any drift would change
+        //      hash_content).
+        //
+        //      The worker's sandbox is a temp dir at
+        //      Path.GetTempPath()/lintty-scan-<publicId>/repo. We replicate
+        //      the same sandbox shape so the engine sees the same path
+        //      depth (the engine renders paths relative to its own
+        //      reporting base, so depth-equality is the requirement —
+        //      not byte-for-byte path equality).
+        var directDir = Path.Combine(Path.GetTempPath(), $"lintty-direct-curated-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directDir);
+        try
+        {
+            var directRepoDir = Path.Combine(directDir, "repo");
+            CopyTree(TestPaths.MultiCsprojFixture, directRepoDir);
+
+            var targetCsprojAbs = Path.Combine(directRepoDir, targetCsprojRelative.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(File.Exists(targetCsprojAbs),
+                $"Direct sandbox csproj missing: {targetCsprojAbs}");
+
+            var directPdf = Path.Combine(directDir, "laudo.pdf");
+            var directJson = Path.Combine(directDir, "report.json");
+            var (exitCode, stderr) = RunEngineDirect(
+                targetCsprojAbs, directPdf, directJson, canonVersion: "1.0.0");
+            Assert.True(exitCode is 0 or 1,
+                $"Direct CLI invocation failed with exit {exitCode}: {stderr}");
+            Assert.True(File.Exists(directPdf), "Direct CLI did not produce a PDF.");
+
+            var directPdfBytes = await File.ReadAllBytesAsync(directPdf);
+            var directPdfHash = Sha256Bytes(directPdfBytes);
+            var directJsonBytes = await File.ReadAllBytesAsync(directJson);
+            var directJsonHash = Sha256Bytes(directJsonBytes);
+
+            // ── 7. The gate. Mirrors the auto-detect gate above.
+            Assert.True(
+                dashboardJsonHash == directJsonHash,
+                "Cross-determinism gate FAILED (curated path): report.json hash differs.\n" +
+                $"  dashboard: {dashboardJsonHash}\n" +
+                $"  cli-direct: {directJsonHash}");
+            Assert.True(
+                dashboardPdfHash == directPdfHash,
+                "Cross-determinism gate FAILED (curated path): PDF differs.\n" +
+                $"  dashboard: {dashboardPdfHash}\n" +
+                $"  cli-direct: {directPdfHash}\n" +
+                $"  dashboard size: {dashboardPdfBytes.Length} B\n" +
+                $"  cli-direct size: {directPdfBytes.Length} B");
+        }
+        finally
+        {
+            try { Directory.Delete(directDir, recursive: true); }
+            catch { /* best effort */ }
+        }
+    }
+
+    /// <summary>
     /// Polls the <c>scans</c> table directly (no auth round-trip) until the
     /// row reaches <paramref name="terminalStatus"/> or <paramref name="deadline"/>
     /// elapses. Returns the EF row on success, <c>null</c> on timeout.

@@ -20,6 +20,16 @@ internal static class TestPaths
     public static string ForeignerFixture => Path.Combine(FixturesDir, "the-foreigner");
 
     /// <summary>
+    /// Sprint 3 PR S1 — multi-csproj sandbox used by the user-curated
+    /// scan-target cross-determinism gate. Two stand-alone csprojs with
+    /// no .sln and no lintty.yml, so the auto-detect path can't pick a
+    /// target. Lives inside the test project (not <c>fixtures/</c>) to
+    /// keep its lifetime tied to the WebInspector test suite.
+    /// </summary>
+    public static string MultiCsprojFixture => Path.Combine(
+        RepoRoot, "engine", "tests", "Lintty.WebInspector.Tests", "Fixtures", "multi-csproj");
+
+    /// <summary>
     /// Returns the path to <c>lintty-engine.dll</c> built by the sibling
     /// <c>Lintty.Engine.Cli</c> project. Looks in Release first, then Debug.
     /// </summary>
