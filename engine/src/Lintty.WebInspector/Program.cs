@@ -19,12 +19,14 @@ using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Models;
 using Lintty.WebInspector.Artifacts;
 using Lintty.WebInspector.Auth;
+using Lintty.WebInspector.Canon;
 using Lintty.WebInspector.Configuration;
 using Lintty.WebInspector.Endpoints;
 using Lintty.WebInspector.Jobs;
 using Lintty.WebInspector.Persistence;
 using Lintty.WebInspector.Persistence.Entities;
 using Lintty.WebInspector.Repos;
+using Lintty.WebInspector.Scans;
 using Lintty.WebInspector.Validation;
 
 namespace Lintty.WebInspector;
@@ -46,6 +48,11 @@ namespace Lintty.WebInspector;
 ///   GET  /api/repos                 – Sprint 3 PR 3 (list)
 ///   GET  /api/repos/{id}            – Sprint 3 PR 3 (detail)
 ///   DELETE /api/repos/{id}          – Sprint 3 PR 3 (soft-delete)
+///   GET  /api/repos/{id}/scans      – Sprint 3 PR 4 (scan history)
+///   POST /api/scans                 – Sprint 3 PR 4 (trigger)
+///   GET  /api/scans/{public_id}     – Sprint 3 PR 4 (poll)
+///   GET  /api/scans/{public_id}/laudo.pdf  – Sprint 3 PR 4 (PDF)
+///   GET  /api/scans/{public_id}/report.json – Sprint 3 PR 4 (JSON)
 ///   GET  /healthz                   – liveness
 ///
 /// Sprint 2 introduces auth (Identity + cookie + GitHub OAuth) and the tenant
@@ -218,6 +225,12 @@ public class Program
         // only the local impl; S3ArtifactStore lands in V1.1. Singleton
         // because the store is stateless — the filesystem is the truth.
         services.AddSingleton<IArtifactStore, LocalArtifactStore>();
+
+        // ADR 0007 Sprint 3 §3.7 PR 4: org-bound scan queue (sibling of
+        // IJobStore for the V0 anonymous flow). Singleton because the queue
+        // is stateless — Postgres owns the truth, the class only holds a
+        // connection string + logger.
+        services.AddSingleton<IScanQueue, PostgresScanQueue>();
     }
 
     private static void RegisterEngineRunner(IServiceCollection services)
@@ -233,6 +246,13 @@ public class Program
         // service holds an EF DbContext (also scoped). Org-import variant
         // arrives in PR 7 alongside IGitHubOrgsClient.
         services.AddScoped<IRepoService, RepoService>();
+
+        // ADR 0007 Sprint 3 / PR 4 — org-bound scan lifecycle. Scoped (EF
+        // DbContext). Canon version provider is a Singleton (pure function
+        // of the host's configuration); will be swapped per-org/per-repo
+        // in V1.1 without disturbing this wiring.
+        services.AddSingleton<ICanonVersionProvider, DefaultCanonVersionProvider>();
+        services.AddScoped<IScanService, ScanService>();
     }
 
     private static void RegisterBackgroundWorkers(IServiceCollection services)
@@ -324,6 +344,7 @@ public class Program
         app.MapJobs();
         app.MapAuth();
         app.MapRepos();
+        app.MapScans();
     }
 
     private static string? ResolveLandingRoot(WebApplication app)

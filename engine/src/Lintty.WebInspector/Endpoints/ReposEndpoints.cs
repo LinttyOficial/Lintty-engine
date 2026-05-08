@@ -12,6 +12,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Lintty.WebInspector.Auth;
 using Lintty.WebInspector.Persistence;
 using Lintty.WebInspector.Repos;
+using Lintty.WebInspector.Scans;
 
 namespace Lintty.WebInspector.Endpoints;
 
@@ -69,6 +70,18 @@ public static class ReposEndpoints
                 "Cross-tenant access (cookie of org A asking for a repo of org B) returns 404 by design " +
                 "(ADR 0007 §3.5 — 404, not 403, to avoid resource enumeration).")
             .Produces<RepoResponse>(StatusCodes.Status200OK, "application/json")
+            .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized, "application/json")
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound, "application/json");
+
+        group.MapGet("/{repoId:long}/scans", ListRepoScans)
+            .WithName("ListRepoScans")
+            .WithSummary("List the scan history of a repo in the active org, newest first")
+            .WithDescription(
+                "Returns the scans queued/running/completed/failed for the repo, ordered " +
+                "by `queued_at DESC`. ADR 0007 §3.7 — public id is the URL-facing identifier; " +
+                "internal numeric ids never leak. Cross-tenant access (cookie of org A asking " +
+                "for a repo of org B) returns 404 by design (§3.5).")
+            .Produces<ScanResponse[]>(StatusCodes.Status200OK, "application/json")
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized, "application/json")
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound, "application/json");
 
@@ -141,6 +154,32 @@ public static class ReposEndpoints
         var row = await repoService.GetAsync(who.OrgId!.Value, repoId, ct).ConfigureAwait(false);
         if (row is null) return NotFound();
         return Results.Json(ToResponse(row), statusCode: StatusCodes.Status200OK);
+    }
+
+    // ── GET /api/repos/{id}/scans ──────────────────────────────────────────
+    private static async Task<IResult> ListRepoScans(
+        long repoId,
+        HttpContext ctx,
+        IRepoService repoService,
+        IScanService scanService,
+        ITenantContext tenant,
+        LinttyDbContext db,
+        CancellationToken ct)
+    {
+        var who = await ResolveCallerAsync(ctx, tenant, db, ct).ConfigureAwait(false);
+        if (who.Failure is not null) return who.Failure;
+
+        // Mirror the GET-by-id contract: validate repo ownership FIRST so a
+        // cross-tenant lookup returns 404 (§3.5) rather than an empty list.
+        // The empty-list semantics (repo exists, no scans yet) only kicks in
+        // when the repo legitimately belongs to the caller.
+        var repo = await repoService.GetAsync(who.OrgId!.Value, repoId, ct).ConfigureAwait(false);
+        if (repo is null) return NotFound();
+
+        var rows = await scanService.ListByRepoAsync(who.OrgId!.Value, repoId, ct).ConfigureAwait(false);
+        return Results.Json(
+            rows.Select(ScansEndpoints.ToResponse).ToList(),
+            statusCode: StatusCodes.Status200OK);
     }
 
     // ── DELETE /api/repos/{id} ─────────────────────────────────────────────

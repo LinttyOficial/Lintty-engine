@@ -40,6 +40,7 @@ public sealed class EngineSubprocessRunner : IEngineRunner
         string targetPath,
         string jsonOutputPath,
         string pdfOutputPath,
+        string? canonVersion,
         CancellationToken ct)
     {
         var dll = ResolveCliDll();
@@ -49,7 +50,7 @@ public sealed class EngineSubprocessRunner : IEngineRunner
                 "lintty-engine.dll not found. Set Engine:CliDllPath in appsettings.json or build the Lintty.Engine.Cli project.");
         }
 
-        var psi = BuildProcessStartInfo(dll, targetPath, jsonOutputPath, pdfOutputPath);
+        var psi = BuildProcessStartInfo(dll, targetPath, jsonOutputPath, pdfOutputPath, canonVersion);
         _logger.LogInformation("engine: dotnet {Args}", psi.Arguments);
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
@@ -71,7 +72,8 @@ public sealed class EngineSubprocessRunner : IEngineRunner
         string dll,
         string targetPath,
         string jsonOutputPath,
-        string pdfOutputPath)
+        string pdfOutputPath,
+        string? canonVersion)
     {
         // Compose argv. We pass --output-file so the JSON does not pollute
         // stdout (we capture stderr for log purposes anyway). --fail-on-grade=F
@@ -81,6 +83,13 @@ public sealed class EngineSubprocessRunner : IEngineRunner
         // ADR 0006: --target accepts .sln, .csproj, or lintty.yml. The worker
         // resolves the path in-process (TargetResolver) and feeds the concrete
         // file path here.
+        //
+        // ADR 0007 §3.7: --canon-version is passed *only* when the caller
+        // supplied one (org-bound scans always do; V0 anonymous never does).
+        // Omitting the flag for V0 keeps the subprocess command line
+        // byte-identical to the pre-Sprint-3 invocation — the
+        // cross-determinism gate in WorkerIntegrationTests depends on the
+        // CLI seeing the same args it always saw.
         var args = new StringBuilder();
         args.Append("exec ").Append(QuoteArg(dll));
         args.Append(" analyze");
@@ -88,6 +97,10 @@ public sealed class EngineSubprocessRunner : IEngineRunner
         args.Append(" --pdf ").Append(QuoteArg(pdfOutputPath));
         args.Append(" --output-file ").Append(QuoteArg(jsonOutputPath));
         args.Append(" --fail-on-grade F");
+        if (!string.IsNullOrEmpty(canonVersion))
+        {
+            args.Append(" --canon-version ").Append(QuoteArg(canonVersion));
+        }
 
         var psi = new ProcessStartInfo
         {

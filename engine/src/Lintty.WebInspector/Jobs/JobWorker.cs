@@ -11,7 +11,9 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Lintty.Engine.Core.Workspace;
+using Lintty.WebInspector.Artifacts;
 using Lintty.WebInspector.Configuration;
+using Lintty.WebInspector.Persistence;
 using Lintty.WebInspector.Validation;
 
 namespace Lintty.WebInspector.Jobs;
@@ -58,15 +60,43 @@ public sealed class JobWorker : BackgroundService
         {
             try
             {
-                using var scope = _scopes.CreateScope();
-                var store = scope.ServiceProvider.GetRequiredService<IJobStore>();
-                var job = await store.ClaimNextQueuedAsync(stoppingToken).ConfigureAwait(false);
-                if (job is null)
+                // ADR 0007 §3.4: drain BOTH queues per poll cycle —
+                //   1. V0 anonymous jobs (jobs table, Dapper, IJobStore)
+                //   2. org-bound scans (scans table, Dapper, IScanQueue)
+                // Order is fixed (jobs first) for two reasons: (a) the V0
+                // contract is the regression baseline so we never want a
+                // dashboard scan to delay a paying-anon flow, (b) deterministic
+                // ordering makes integration tests stable. Each iteration of
+                // the loop processes at most ONE work item across both queues
+                // so a long org-bound scan never starves the anon path the way
+                // a single combined claim would.
+                var workDone = false;
+                using (var scope = _scopes.CreateScope())
+                {
+                    var jobStore = scope.ServiceProvider.GetRequiredService<IJobStore>();
+                    var job = await jobStore.ClaimNextQueuedAsync(stoppingToken).ConfigureAwait(false);
+                    if (job is not null)
+                    {
+                        await RunJobAsync(scope.ServiceProvider, job, stoppingToken).ConfigureAwait(false);
+                        workDone = true;
+                    }
+                }
+                if (!workDone)
+                {
+                    using var scope = _scopes.CreateScope();
+                    var scanQueue = scope.ServiceProvider.GetRequiredService<IScanQueue>();
+                    var claimed = await scanQueue.ClaimNextQueuedAsync(stoppingToken).ConfigureAwait(false);
+                    if (claimed is not null)
+                    {
+                        await RunScanAsync(scope.ServiceProvider, claimed, stoppingToken).ConfigureAwait(false);
+                        workDone = true;
+                    }
+                }
+
+                if (!workDone)
                 {
                     await Task.Delay(pollDelay, stoppingToken).ConfigureAwait(false);
-                    continue;
                 }
-                await RunJobAsync(scope.ServiceProvider, job, stoppingToken).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -443,4 +473,184 @@ public sealed class JobWorker : BackgroundService
         => el.TryGetProperty(name, out var p) && p.ValueKind == JsonValueKind.String ? p.GetString() : null;
 
     private sealed record ReportSummary(int Score, string Grade, string CanonVersion, int ViolationCount, int HardLocksOpen);
+
+    // ─────────────────────────────────────────────────────────────────────
+    // ADR 0007 Sprint 3 PR 4 — org-bound scan path
+    //
+    // Mirrors the V0 RunJobAsync pipeline (clone → resolve → engine →
+    // mark) but drives the scans table via IScanQueue (Dapper) and writes
+    // artifacts via IArtifactStore (path reserved BEFORE the engine call,
+    // so the CLI writes directly to the canonical location — no copy step
+    // that could break byte equality with the local CLI).
+    //
+    // V0 path (RunJobAsync above) is intentionally untouched: the V0
+    // regression gate (WorkerIntegrationTests.{Saint,Sinner,SaintNoSln,
+    // Foreigner}_*) compares the dashboard's PDF byte-for-byte to a CLI
+    // direct invocation; any code change in that path risks breaking the
+    // hash. Code duplication here is the right call until Sprint 5
+    // unifies the two flows on top of IArtifactStore + IScanQueue.
+    // ─────────────────────────────────────────────────────────────────────
+
+    private async Task RunScanAsync(IServiceProvider services, ClaimedScan scan, CancellationToken ct)
+    {
+        using var _ = _logger.BeginScope(new System.Collections.Generic.Dictionary<string, object>
+        {
+            ["scan_public_id"] = scan.PublicId,
+            ["scan_id"] = scan.ScanId,
+            ["org_id"] = scan.OrgId,
+        });
+
+        var queue = services.GetRequiredService<IScanQueue>();
+        var git = services.GetRequiredService<IGitClient>();
+        var engine = services.GetRequiredService<IEngineRunner>();
+        var artifacts = services.GetRequiredService<IArtifactStore>();
+
+        var cloneRoot = Path.Combine(Path.GetTempPath(), $"lintty-scan-{scan.PublicId:N}");
+        var repoDir = Path.Combine(cloneRoot, "repo");
+        Directory.CreateDirectory(cloneRoot);
+
+        try
+        {
+            // ── 1. Clone ────────────────────────────────────────────────
+            var coordsParse = UrlValidator.TryParse(scan.GithubUrl, out var parseError);
+            if (coordsParse is null)
+            {
+                await queue.MarkFailedAsync(scan.ScanId,
+                    SanitizeError(parseError ?? "URL parse failed"), ct).ConfigureAwait(false);
+                return;
+            }
+
+            // Ref preference: explicit override on the scan row → repo's
+            // default branch (snapshotted at claim time) → null (let
+            // git clone --depth 1 resolve HEAD itself, same as V0).
+            var gitRef = !string.IsNullOrEmpty(scan.Ref)
+                ? scan.Ref
+                : (string.IsNullOrEmpty(scan.DefaultBranch) ? null : scan.DefaultBranch);
+            var cloneResult = await git.CloneAsync(coordsParse, gitRef, token: null, repoDir, ct).ConfigureAwait(false);
+            if (!cloneResult.Success)
+            {
+                await queue.MarkFailedAsync(scan.ScanId,
+                    SanitizeError(cloneResult.ErrorMessage ?? "clone failed"), ct).ConfigureAwait(false);
+                return;
+            }
+
+            // ── 2. Resolve target via in-process resolver (ADR 0006) ────
+            string targetPath;
+            try
+            {
+                var resolved = TargetResolver.Resolve(
+                    targetArg: null,
+                    cwd: repoDir,
+                    mode: TargetResolverMode.WebInspector);
+                targetPath = resolved.SolutionPathForReporting;
+            }
+            catch (TargetResolutionException trex)
+            {
+                await queue.MarkFailedAsync(scan.ScanId,
+                    SanitizeError(trex.Message), ct).ConfigureAwait(false);
+                return;
+            }
+
+            // ── 3. Reserve artifact paths BEFORE invoking the engine ───
+            // The CLI writes directly to these paths (--pdf, --output-file).
+            // No copy/move step → no chance of byte drift on the artifact.
+            var pdfPath = await artifacts.ReserveAsync(scan.PublicId, ArtifactKind.LaudoPdf, ct).ConfigureAwait(false);
+            var jsonPath = await artifacts.ReserveAsync(scan.PublicId, ArtifactKind.ReportJson, ct).ConfigureAwait(false);
+
+            // ── 4. Invoke the engine with the snapshotted canon ─────────
+            // §3.7 invariant: --canon-version is ALWAYS passed for org-bound
+            // scans, even when it equals the engine's default. The dashboard's
+            // determinism contract requires the canon to be explicit on every
+            // org-bound invocation so a future canon bump doesn't silently
+            // re-grade a queued scan.
+            var run = await engine.RunAsync(targetPath, jsonPath, pdfPath, scan.CanonVersion, ct).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(run.Stderr))
+                _logger.LogInformation("engine stderr:\n{Stderr}", run.Stderr.TrimEnd());
+
+            if (run.ExitCode != 0 && run.ExitCode != 1)
+            {
+                // 0 = grade better than --fail-on-grade, 1 = grade equal-or-worse.
+                // Both mean "engine produced JSON+PDF cleanly". 2 = exec error,
+                // 127 = our timeout sentinel, anything else is unexpected.
+                var msg = run.ExitCode switch
+                {
+                    127 => $"engine timeout: {FirstLine(run.Stderr)}",
+                    2 => $"engine error: {FirstLine(run.Stderr)}",
+                    _ => $"engine returned exit code {run.ExitCode.ToString(CultureInfo.InvariantCulture)}: {FirstLine(run.Stderr)}",
+                };
+                await queue.MarkFailedAsync(scan.ScanId, SanitizeError(msg), ct).ConfigureAwait(false);
+                return;
+            }
+
+            if (!File.Exists(jsonPath) || !File.Exists(pdfPath))
+            {
+                await queue.MarkFailedAsync(scan.ScanId,
+                    "engine completed but artifacts are missing.", ct).ConfigureAwait(false);
+                return;
+            }
+
+            // ── 5. Mark completed; persist hash_content ─────────────────
+            // hash_content is the SHA-256 of the JSON bytes written by the
+            // engine — same value the engine embeds in the PDF footer (ADR
+            // 0003 §5.2) and the cross-determinism witness in §3.7.
+            var jsonBytes = await File.ReadAllBytesAsync(jsonPath, ct).ConfigureAwait(false);
+            var hashContent = "sha256:" + Sha256(jsonBytes);
+            await queue.MarkCompletedAsync(scan.ScanId, hashContent, ct).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "scan completed: public_id={PublicId} canon={Canon} hash={Hash}",
+                scan.PublicId, scan.CanonVersion, hashContent);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Host shutdown mid-scan; leave the row in 'running' for now —
+            // PR 5 / Sprint 5 handles stuck-running cleanup.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unhandled exception while running scan");
+            try
+            {
+                await queue.MarkFailedAsync(scan.ScanId, SanitizeError(ex.Message), ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                // best effort
+            }
+        }
+        finally
+        {
+            // Always purge the clone scratch space — same LGPD invariant
+            // as the V0 path. ScanId-based path so concurrent V0 jobs and
+            // org-bound scans never collide.
+            PurgeQuietly(cloneRoot);
+            _logger.LogInformation(
+                "scan clone purged at {Time}",
+                DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture));
+        }
+    }
+
+    /// <summary>
+    /// Strips PII / secrets that might accidentally land in error messages.
+    /// V0 only handles public clones (no token), so this is mostly belt-and-
+    /// suspenders for git CLI output that occasionally embeds the URL with
+    /// credentials encoded — we drop anything that looks like a userinfo
+    /// portion (<c>scheme://user:pwd@host</c>).
+    /// </summary>
+    private static string SanitizeError(string raw)
+    {
+        if (string.IsNullOrEmpty(raw)) return string.Empty;
+        // Cap length so a multi-MB stack trace doesn't end up in the DB.
+        var trimmed = raw.Length > 1024 ? raw[..1024] + "…" : raw;
+        // Naive userinfo strip — enough for git/HTTP. Doesn't try to be
+        // exhaustive; production secret scanning is the security team's
+        // domain (see docs/futuro/).
+        return System.Text.RegularExpressions.Regex.Replace(
+            trimmed,
+            @"(?<scheme>https?://)[^@\s/]+(:[^@\s/]+)?@",
+            "${scheme}",
+            System.Text.RegularExpressions.RegexOptions.None,
+            TimeSpan.FromMilliseconds(50));
+    }
 }

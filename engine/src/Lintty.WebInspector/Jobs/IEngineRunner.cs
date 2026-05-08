@@ -26,10 +26,35 @@ public interface IEngineRunner
     /// </param>
     /// <param name="jsonOutputPath">Absolute path where the engine writes the report JSON.</param>
     /// <param name="pdfOutputPath">Absolute path where the engine writes the audit PDF.</param>
+    /// <param name="canonVersion">
+    /// When non-null, passed through to the CLI as <c>--canon-version &lt;value&gt;</c>.
+    /// ADR 0007 §3.7 — the org-bound scan flow snapshots canon at trigger
+    /// time and replays it verbatim here. The V0 anonymous flow leaves this
+    /// <c>null</c>, which keeps the existing CLI invocation byte-for-byte
+    /// identical (the CLI then defaults to lintty.yml or "1.0.0", as before).
+    /// </param>
     /// <param name="ct">Cancellation token; the runner enforces its own timeout in addition.</param>
     Task<EngineRunResult> RunAsync(
         string targetPath,
         string jsonOutputPath,
         string pdfOutputPath,
+        string? canonVersion,
         CancellationToken ct);
+}
+
+/// <summary>
+/// Backwards-compatible shims for the V0 anonymous worker path (no canon
+/// override). Keeps callers like the V0 <c>RunEngineStageAsync</c> reading
+/// at one method overload while the new org-bound code path always passes
+/// the snapshotted canon explicitly.
+/// </summary>
+public static class EngineRunnerExtensions
+{
+    public static Task<EngineRunResult> RunAsync(
+        this IEngineRunner runner,
+        string targetPath,
+        string jsonOutputPath,
+        string pdfOutputPath,
+        CancellationToken ct)
+        => runner.RunAsync(targetPath, jsonOutputPath, pdfOutputPath, canonVersion: null, ct);
 }
