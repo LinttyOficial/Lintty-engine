@@ -227,6 +227,12 @@ public sealed class LinttyDbContext : IdentityDbContext<User, Role, long>
             b.Property(s => s.Status).IsRequired().HasMaxLength(16);
             b.Property(s => s.QueuedAt).HasDefaultValueSql("now() at time zone 'utc'");
 
+            // Sprint 3 PR S2 — per-scan target. Nullable text: a row without
+            // a target falls back to engine auto-detect (V0 anonymous-style).
+            // Triggering N targets creates N rows, each with its own value
+            // here, so the worker never needs to synthesize a runtime yaml.
+            b.Property(s => s.Target).HasColumnType("text");
+
             b.HasOne(s => s.Org)
                 .WithMany()
                 .HasForeignKey(s => s.OrgId)

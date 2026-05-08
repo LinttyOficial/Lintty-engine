@@ -103,12 +103,14 @@ public sealed record ClaimedScan(
     string CanonVersion,
     bool IsPrivate,
     long AddedByUserId,
-    string[]? ScanProjects)
+    string? Target)
 {
-    // ScanProjects (Sprint 3 PR S1): snapshot of repos.scan_projects at
-    // claim time. null / empty → auto-detect (current behaviour); 1 entry
-    // → single .sln/.csproj/lintty.yml target; 2+ entries (all .csproj) →
-    // worker writes a throwaway .lintty-runtime.yml in the sandbox. The
-    // column is validated at write time by IRepoPreflightService; the
-    // worker trusts it blindly.
+    // Target (Sprint 3 PR S2): snapshot of scans.target at claim time. The
+    // value is per-scan, not per-repo. null → auto-detect (V0 anonymous-
+    // style; the resolver picks the .sln/lintty.yml/single .csproj). A
+    // .sln or .csproj path → the worker resolves it inside the clone and
+    // passes --target to the engine subprocess.
+    //
+    // Triggering with N targets created N scan rows, so the worker never
+    // has to merge or synthesize a runtime yaml — each row is independent.
 }

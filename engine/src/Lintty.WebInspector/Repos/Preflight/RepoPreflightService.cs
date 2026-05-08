@@ -252,31 +252,40 @@ public sealed class RepoPreflightService : IRepoPreflightService
     }
 
     /// <summary>
-    /// Combination validity per spec: empty (handled outside), 1 yaml,
-    /// 1 sln, 1 csproj, or 2+ all-csproj. Anything else is invalid.
+    /// Sprint 3 PR S2 — combination validity. Each entry expands into its
+    /// own scan row, so any mix of <c>.sln</c> + <c>.csproj</c> is allowed.
+    /// yaml is rejected because the engine resolver fails on a
+    /// <c>lintty.yml</c> without a <c>projects:</c> declaration (the bug
+    /// PR S2 closes). The maximum batch size is enforced here too so a
+    /// PUT can't seed a value the trigger endpoint would later reject.
     /// Returns a human message when invalid, <c>null</c> when valid.
     /// </summary>
     private static string? ValidateCombination(IReadOnlyList<string> projects)
     {
-        var yaml = 0;
+        const int maxEntries = 50;
+        if (projects.Count > maxEntries)
+            return $"Selection is too large ({projects.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} entries); pick at most {maxEntries.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
+
         var sln = 0;
         var csproj = 0;
-        var unknown = 0;
         foreach (var p in projects)
         {
             if (string.IsNullOrEmpty(p)) return "Empty path is not allowed.";
             if (p.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)) sln++;
             else if (p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)) csproj++;
             else if (string.Equals(p, "lintty.yml", StringComparison.OrdinalIgnoreCase)
-                  || p.EndsWith("/lintty.yml", StringComparison.OrdinalIgnoreCase)) yaml++;
-            else unknown++;
+                  || p.EndsWith("/lintty.yml", StringComparison.OrdinalIgnoreCase)
+                  || p.EndsWith(".yml", StringComparison.OrdinalIgnoreCase)
+                  || p.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
+            {
+                return $"Path '{p}' is a yaml file; only .sln or .csproj entries are accepted.";
+            }
+            else
+            {
+                return $"Path '{p}' must end in .sln or .csproj.";
+            }
         }
-        if (unknown > 0) return "Only .sln, .csproj, or lintty.yml paths are allowed.";
-        if (sln > 1) return "Pick a single .sln, not multiple.";
-        if (yaml > 1) return "Pick a single lintty.yml, not multiple.";
-        if (sln + yaml > 0 && csproj > 0)
-            return "Cannot mix .sln/lintty.yml with .csproj. Pick a solution OR a project list.";
-        if (sln + yaml + csproj == 0) return "Selection is empty.";
+        if (sln + csproj == 0) return "Selection is empty.";
         return null;
     }
 
@@ -314,16 +323,20 @@ public sealed class RepoPreflightService : IRepoPreflightService
     }
 
     /// <summary>
-    /// Build the ordered candidate list the dashboard renders. yaml first
-    /// (most explicit), then sln (alpha), then csproj (alpha). Already
-    /// alpha-sorted inside categories by
+    /// Build the ordered candidate list the dashboard renders. Sprint 3
+    /// PR S2 — yaml is intentionally <b>excluded</b> from the picker
+    /// because a <c>lintty.yml</c> without a <c>projects:</c> declaration
+    /// fails the engine resolver, and the dashboard cannot tell from a
+    /// tree walk whether a yaml has a usable <c>projects:</c> block.
+    /// Discovery still surfaces yaml files so the auto-detect status
+    /// branch (root <c>lintty.yml</c> wins) works; users just can't pick
+    /// them explicitly. Order: sln (alpha), then csproj (alpha) —
+    /// already alpha-sorted inside categories by
     /// <see cref="GitHubRepoTargetDiscovery"/>.
     /// </summary>
     private static IReadOnlyList<PreflightCandidate> BuildOrderedCandidates(RepoTargetDiscoveryResult d)
     {
-        var list = new List<PreflightCandidate>(
-            d.LinttyYmlFiles.Count + d.SlnFiles.Count + d.CsprojFiles.Count);
-        foreach (var p in d.LinttyYmlFiles) list.Add(new PreflightCandidate(CandidateKind.Yaml, p));
+        var list = new List<PreflightCandidate>(d.SlnFiles.Count + d.CsprojFiles.Count);
         foreach (var p in d.SlnFiles) list.Add(new PreflightCandidate(CandidateKind.Sln, p));
         foreach (var p in d.CsprojFiles) list.Add(new PreflightCandidate(CandidateKind.Csproj, p));
         return list;

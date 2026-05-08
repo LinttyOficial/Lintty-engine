@@ -252,7 +252,7 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
-            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, gitRef: null, CancellationToken.None);
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, gitRef: null, targets: null, CancellationToken.None);
             Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
             publicId = trigger.Scan!.PublicId;
         }
@@ -406,7 +406,7 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
             var trigger = await scanService.TriggerAsync(
-                orgId, userId, repoId, gitRef: null, CancellationToken.None);
+                orgId, userId, repoId, gitRef: null, targets: null, CancellationToken.None);
             Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
             publicId = trigger.Scan!.PublicId;
             // Confirm the snapshot at trigger time is exactly what we set.
@@ -556,7 +556,7 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
-            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, gitRef: null, CancellationToken.None);
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, gitRef: null, targets: null, CancellationToken.None);
             Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
             publicId = trigger.Scan!.PublicId;
         }
@@ -575,7 +575,7 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
     }
 
     /// <summary>
-    /// ADR 0007 Sprint 3 / PR S1 cross-determinism gate for the
+    /// ADR 0007 Sprint 3 / PR S2 cross-determinism gate for the
     /// <i>user-curated</i> scan-target path. The two existing gates
     /// (<see cref="Saint_Runs_End_To_End_And_Pdf_Matches_Cli_Direct_Invocation"/>
     /// and <see cref="DashboardScan_Saint_Pdf_Equals_CliDirect"/>) cover the
@@ -585,7 +585,17 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
     /// pointing <c>--target</c> at the same .csproj inside the same sandbox.
     ///
     /// <para>
-    /// Without this gate, a regression in <c>JobWorker.ResolveScanTargetArgAsync</c>
+    /// PR S2 model: each scan row carries its own <c>scan.Target</c>; the
+    /// worker passes that single target straight through to the engine.
+    /// This test triggers a scan against a repo with a saved
+    /// <c>scan_projects=[A.csproj]</c>; the service expands that into 1
+    /// scan row with <c>Target=A.csproj</c>; the worker invokes the engine
+    /// with <c>--target A.csproj</c>; the resulting PDF must equal the CLI
+    /// direct invocation with the same flag.
+    /// </para>
+    ///
+    /// <para>
+    /// Without this gate, a regression in <c>JobWorker.ResolveScanTargetArg</c>
     /// or <c>PostgresScanQueue</c>'s claim projection could silently
     /// produce a different PDF than the CLI direct path — the entire
     /// dashboard pitch ("same engine, same canon, same PDF") would
@@ -611,7 +621,8 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
 
         // ── 2. Register a repo + persist the saved selection directly on
         //      the row (the PUT endpoint has its own coverage in
-        //      RepoPreflightTests).
+        //      RepoPreflightTests). PR S2: this single saved entry will be
+        //      expanded into 1 scan row with Target set to the same path.
         var add = await client.PostAsJsonAsync("/api/repos", new
         {
             githubUrl = "https://github.com/lintty-demo/multi-csproj",
@@ -629,15 +640,18 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
             await db.SaveChangesAsync();
         }
 
-        // ── 3. Trigger the scan via the service (same shortcut the
-        //      auto-detect gate uses). The worker's claim projection
-        //      will pick up scan_projects from repos.
+        // ── 3. Trigger the scan via the service. The trigger expands the
+        //      saved scan_projects into 1 row with Target=ProjA.csproj.
         Guid publicId;
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
-            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, gitRef: null, CancellationToken.None);
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, gitRef: null, targets: null, CancellationToken.None);
             Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
+            // PR S2: the trigger now returns a list. With 1 saved entry we
+            // expect exactly 1 row, and that row's Target is the saved path.
+            Assert.Single(trigger.Scans);
+            Assert.Equal(targetCsprojRelative, trigger.Scans[0].Target);
             publicId = trigger.Scan!.PublicId;
         }
 
@@ -714,6 +728,185 @@ public sealed class WorkerIntegrationTests : WebInspectorTestBase
             try { Directory.Delete(directDir, recursive: true); }
             catch { /* best effort */ }
         }
+    }
+
+    /// <summary>
+    /// PR S2 — N targets in the request body create N scan rows. The
+    /// service inserts them in a single transaction and returns
+    /// <c>{ publicIds: string[] }</c> in trigger order. Each row carries
+    /// its own <c>Target</c>; no merging via runtime yaml.
+    /// </summary>
+    [Fact]
+    public async Task Trigger_With_Three_Targets_Creates_Three_Scans_Each_With_Own_Target()
+    {
+        await ResetAsync();
+        await using var factory = CreateFactory();
+        // Worker disabled — we only assert the rows the trigger inserted.
+        // The cross-determinism gate above already covers the runtime path.
+        factory.DisableWorker = true;
+        var (client, orgId, _) = await SignUpAndGetAuthedClientAsync(
+            factory, "batch@example.com", "Batch Co");
+
+        var add = await client.PostAsJsonAsync("/api/repos", new
+        {
+            githubUrl = "https://github.com/lintty-demo/multi-csproj",
+        });
+        add.EnsureSuccessStatusCode();
+        using var addDoc = JsonDocument.Parse(await add.Content.ReadAsStringAsync());
+        var repoId = addDoc.RootElement.GetProperty("id").GetInt64();
+
+        var targets = new[]
+        {
+            "src/ProjA/ProjA.Domain.csproj",
+            "src/ProjB/ProjB.Domain.csproj",
+            "src/ProjA/ProjA.Domain.csproj", // duplicate is allowed at trigger time
+        };
+
+        var resp = await client.PostAsJsonAsync("/api/scans", new
+        {
+            repoId,
+            targets,
+        });
+        Assert.Equal(System.Net.HttpStatusCode.Created, resp.StatusCode);
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        var ids = doc.RootElement.GetProperty("publicIds");
+        Assert.Equal(3, ids.GetArrayLength());
+
+        // Each row carries its own target. Order in the DB matches trigger
+        // order because we Add()ed in order and Postgres assigns ids
+        // monotonically; we verify by sorting on Id ASC.
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<LinttyDbContext>();
+        var rows = await db.Scans
+            .AsNoTracking()
+            .Where(s => s.OrgId == orgId && s.RepoId == repoId)
+            .OrderBy(s => s.Id)
+            .ToListAsync();
+        Assert.Equal(3, rows.Count);
+        Assert.Equal(targets[0], rows[0].Target);
+        Assert.Equal(targets[1], rows[1].Target);
+        Assert.Equal(targets[2], rows[2].Target);
+        // All carry the same canon snapshot (single batch).
+        Assert.Equal("1.0.0", rows[0].CanonVersion);
+        Assert.Equal(rows[0].CanonVersion, rows[1].CanonVersion);
+        Assert.Equal(rows[0].CanonVersion, rows[2].CanonVersion);
+    }
+
+    /// <summary>
+    /// PR S2 — auto-detect fallback survives. With no per-request targets
+    /// and no saved <c>scan_projects</c>, the trigger emits exactly 1 row
+    /// with <c>Target = null</c>; the worker's resolver runs auto-detect
+    /// (V0 anonymous behaviour). This is the gate that proves we did not
+    /// silently break the default path.
+    /// </summary>
+    [Fact]
+    public async Task Trigger_With_No_Targets_And_No_Saved_Falls_Back_To_AutoDetect_Single_Scan()
+    {
+        await ResetAsync();
+        await using var factory = CreateFactory();
+        factory.DisableWorker = true;
+        var (client, orgId, _) = await SignUpAndGetAuthedClientAsync(
+            factory, "auto@example.com", "Auto Co");
+
+        var add = await client.PostAsJsonAsync("/api/repos", new
+        {
+            githubUrl = "https://github.com/lintty-demo/the-saint",
+        });
+        add.EnsureSuccessStatusCode();
+        using var addDoc = JsonDocument.Parse(await add.Content.ReadAsStringAsync());
+        var repoId = addDoc.RootElement.GetProperty("id").GetInt64();
+
+        var resp = await client.PostAsJsonAsync("/api/scans", new { repoId });
+        Assert.Equal(System.Net.HttpStatusCode.Created, resp.StatusCode);
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        Assert.Equal(1, doc.RootElement.GetProperty("publicIds").GetArrayLength());
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<LinttyDbContext>();
+        var rows = await db.Scans
+            .AsNoTracking()
+            .Where(s => s.OrgId == orgId && s.RepoId == repoId)
+            .ToListAsync();
+        Assert.Single(rows);
+        Assert.Null(rows[0].Target);
+    }
+
+    /// <summary>
+    /// PR S2 — when <c>scan.Target</c> is set on a row, the worker passes
+    /// the corresponding absolute path through <c>TargetResolver</c> and
+    /// the engine subprocess receives <c>--target</c>. The cross-
+    /// determinism gate
+    /// <see cref="DashboardScan_With_Saved_ScanProjects_Pdf_Equals_CliDirect_Same_Target"/>
+    /// already proves this end-to-end via PDF byte equality; this test
+    /// exercises the same path with a row built directly (no
+    /// <c>repos.scan_projects</c> seed) so a regression that breaks the
+    /// per-row path while leaving the saved-list path working would still
+    /// be caught.
+    /// </summary>
+    [Fact]
+    public async Task Worker_With_Single_Target_Set_On_Scan_Row_Calls_Engine_With_Target()
+    {
+        await ResetAsync();
+        Assert.True(Directory.Exists(TestPaths.MultiCsprojFixture),
+            $"multi-csproj fixture missing: {TestPaths.MultiCsprojFixture}");
+
+        await using var factory = CreateFactory();
+        factory.DisableWorker = false;
+        factory.GitClientOverride = new FixtureCopyGitClient(TestPaths.MultiCsprojFixture);
+
+        // Capture the engine invocations so we can assert --target was
+        // passed verbatim. RecordingEngineRunner records each call's
+        // TargetPath before delegating to the real runner.
+        Fakes.RecordingEngineRunner? recordingRef = null;
+        factory.EngineRunnerDecorator = inner =>
+        {
+            var w = new Fakes.RecordingEngineRunner(inner);
+            recordingRef = w;
+            return w;
+        };
+
+        var (client, orgId, userId) = await SignUpAndGetAuthedClientAsync(
+            factory, "row-target@example.com", "RowTarget Co");
+
+        var add = await client.PostAsJsonAsync("/api/repos", new
+        {
+            githubUrl = "https://github.com/lintty-demo/multi-csproj",
+        });
+        add.EnsureSuccessStatusCode();
+        using var addDoc = JsonDocument.Parse(await add.Content.ReadAsStringAsync());
+        var repoId = addDoc.RootElement.GetProperty("id").GetInt64();
+
+        const string targetRelative = "src/ProjB/ProjB.Domain.csproj";
+
+        // No saved scan_projects on the repo — we set the per-request override.
+        Guid publicId;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
+            var trigger = await scanService.TriggerAsync(
+                orgId, userId, repoId,
+                gitRef: null,
+                targets: new[] { targetRelative },
+                CancellationToken.None);
+            Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
+            Assert.Single(trigger.Scans);
+            Assert.Equal(targetRelative, trigger.Scans[0].Target);
+            publicId = trigger.Scan!.PublicId;
+        }
+
+        var completed = await WaitForScanStatusAsync(
+            factory, publicId, ScanStatus.Completed, TimeSpan.FromMinutes(3));
+        Assert.NotNull(completed);
+        Assert.Equal(ScanStatus.Completed, completed!.Status);
+
+        // Engine subprocess received the resolved absolute path. Whatever
+        // depth the worker uses for its sandbox (Path.GetTempPath()/lintty-
+        // scan-<publicId>/repo), the path must end in our chosen csproj.
+        Assert.NotNull(recordingRef);
+        var invocations = recordingRef!.Invocations;
+        Assert.NotEmpty(invocations);
+        var lastTarget = invocations[^1].TargetPath;
+        Assert.EndsWith(targetRelative.Replace('/', Path.DirectorySeparatorChar), lastTarget);
     }
 
     /// <summary>

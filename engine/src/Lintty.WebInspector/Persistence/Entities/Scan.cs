@@ -85,6 +85,28 @@ public sealed class Scan
     /// of determinism: must equal the CLI's <c>hash_content</c> for the same
     /// (github_url, ref, canon_version).</summary>
     public string? HashContent { get; set; }
+
+    /// <summary>
+    /// Per-scan target path, relative to the cloned repo root (forward
+    /// slashes). Sprint 3 PR S2 — replaces the runtime-yaml synthesis path.
+    /// <list type="bullet">
+    ///   <item><description><c>null</c> → auto-detect (V0 anonymous-style).
+    ///         The resolver picks the .sln, lintty.yml, or lone .csproj.</description></item>
+    ///   <item><description>A <c>.sln</c> or <c>.csproj</c> path → the worker
+    ///         resolves it inside the clone and passes <c>--target</c> to
+    ///         the engine subprocess.</description></item>
+    /// </list>
+    /// <para>
+    /// One target per scan row. Triggering with N targets creates N rows;
+    /// each row carries one <see cref="Target"/> and produces its own PDF.
+    /// <c>lintty.yml</c> entries are NOT accepted here — the
+    /// <c>POST /api/scans</c> endpoint rejects them at trigger time because
+    /// a yaml without a <c>projects:</c> declaration would fail the
+    /// resolver. yaml-as-target is preserved for the V0 anonymous flow
+    /// (jobs table) where the engine's own auto-detect handles it.
+    /// </para>
+    /// </summary>
+    public string? Target { get; set; }
 }
 
 /// <summary>

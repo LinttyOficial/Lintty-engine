@@ -73,28 +73,34 @@ public sealed class Repo
     public DateTime? DeletedAt { get; set; }
 
     /// <summary>
-    /// User-curated scan target paths (Sprint 3 PR S1). Each entry is a
-    /// repo-relative POSIX path (forward slashes, no leading <c>./</c>) to a
-    /// <c>.sln</c>, <c>.csproj</c>, or <c>lintty.yml</c>.
+    /// User-curated default targets to expand into independent scans on the
+    /// next trigger (Sprint 3 PR S1, semantics revised in PR S2). Each entry
+    /// is a repo-relative POSIX path (forward slashes, no leading <c>./</c>)
+    /// to a <c>.sln</c> or <c>.csproj</c>.
     /// <para>
-    /// Semantics consumed by <see cref="Lintty.WebInspector.Jobs.JobWorker"/>:
+    /// Semantics consumed by <c>POST /api/scans</c>:
     /// </para>
     /// <list type="bullet">
-    ///   <item><description><c>null</c> or empty → auto-detect (current
-    ///         behaviour: <see cref="Lintty.Engine.Core.Workspace.TargetResolver"/>
-    ///         picks the .sln, lintty.yml, or single .csproj).</description></item>
-    ///   <item><description>Single <c>.sln</c> entry → analyze that solution.</description></item>
-    ///   <item><description>Single <c>.csproj</c> entry → analyze that project.</description></item>
-    ///   <item><description>Single <c>lintty.yml</c> entry → use the yml's
-    ///         <c>projects:</c> list.</description></item>
-    ///   <item><description>2+ <c>.csproj</c> entries → the worker writes a
-    ///         throwaway <c>.lintty-runtime.yml</c> in the sandbox declaring
-    ///         this list, then targets that yml.</description></item>
+    ///   <item><description><c>null</c> or empty → 1 scan, auto-detect (the
+    ///         resolver picks the .sln, lintty.yml, or single .csproj).</description></item>
+    ///   <item><description>N entries → <b>N independent scans</b>, one per
+    ///         entry. Each scan row carries its own
+    ///         <see cref="Lintty.WebInspector.Persistence.Entities.Scan.Target"/>
+    ///         and produces its own PDF. Mixed <c>.sln</c> + <c>.csproj</c>
+    ///         is allowed because there is no longer a single combined run.</description></item>
     /// </list>
-    /// Validation (combinations + path-not-in-candidates rejection) happens at
-    /// the PUT endpoint via <c>IRepoPreflightService.SetScanProjectsAsync</c>;
-    /// the worker trusts the column blindly because the candidate set was
-    /// validated before persistence.
+    /// <para>
+    /// <b><c>lintty.yml</c> is not accepted here.</b> The picker filters
+    /// yaml entries out of the candidate list (<c>RepoPreflightService</c>);
+    /// the trigger endpoint defensively rejects yaml entries with 400 even
+    /// if a legacy row somehow contains one. yaml without a <c>projects:</c>
+    /// declaration would fail the engine resolver — the bug PR S2 closes.
+    /// </para>
+    /// <para>
+    /// Per-trigger override: <c>POST /api/scans { targets: [...] }</c>
+    /// supersedes this column. The saved value is the default applied when
+    /// the request omits <c>targets</c>.
+    /// </para>
     /// </summary>
     public string[]? ScanProjects { get; set; }
 }

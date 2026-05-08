@@ -74,7 +74,7 @@ public sealed class PostgresScanQueue : IScanQueue
                     LIMIT 1
                     FOR UPDATE SKIP LOCKED
                 )
-                RETURNING id, public_id, org_id, repo_id, ""ref"", canon_version
+                RETURNING id, public_id, org_id, repo_id, ""ref"", canon_version, target
             )
             SELECT
                 c.id              AS scan_id,
@@ -87,7 +87,7 @@ public sealed class PostgresScanQueue : IScanQueue
                 c.canon_version   AS canon_version,
                 r.is_private      AS is_private,
                 r.added_by_user_id AS added_by_user_id,
-                r.scan_projects   AS scan_projects
+                c.target          AS target
             FROM claimed c
             JOIN repos r ON r.id = c.repo_id;
         ";
@@ -107,7 +107,7 @@ public sealed class PostgresScanQueue : IScanQueue
             CanonVersion: row.canon_version,
             IsPrivate: row.is_private,
             AddedByUserId: row.added_by_user_id,
-            ScanProjects: row.scan_projects);
+            Target: row.target);
     }
 
     public async Task MarkCompletedAsync(long scanId, string hashContent, CancellationToken ct)
@@ -176,7 +176,7 @@ public sealed class PostgresScanQueue : IScanQueue
         public string canon_version { get; set; } = string.Empty;
         public bool is_private { get; set; }
         public long added_by_user_id { get; set; }
-        public string[]? scan_projects { get; set; }
+        public string? target { get; set; }
     }
 #pragma warning restore IDE1006, CA1707, SA1300
 }

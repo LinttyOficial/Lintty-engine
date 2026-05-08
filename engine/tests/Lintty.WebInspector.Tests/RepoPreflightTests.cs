@@ -373,7 +373,7 @@ public sealed class RepoPreflightTests : WebInspectorTestBase
     }
 
     [Fact]
-    public async Task SetScanTarget_With_Mixed_Sln_And_Csproj_Returns_400()
+    public async Task SetScanTarget_With_Mixed_Sln_And_Csproj_Now_Valid()
     {
         await ResetAsync();
         await using var factory = CreateFactory();
@@ -389,12 +389,81 @@ public sealed class RepoPreflightTests : WebInspectorTestBase
                 LinttyYmlFiles: Array.Empty<string>(),
                 Truncated: false);
 
-        // Combination invalid: 1 sln + 1 csproj. Combination check fires
-        // before the candidate-set check, so even though both paths exist
-        // in the discovery, we reject with 400.
+        // PR S2: each entry expands into its own scan, so any mix of sln +
+        // csproj is now valid. The PUT persists the list verbatim;
+        // triggering it later would create 2 scans (1 per entry).
         var resp = await client.PutAsJsonAsync($"/api/repos/{repoId}/scan-target", new
         {
             projects = new[] { "Saint.sln", "src/Saint.Domain/Saint.Domain.csproj" },
+        });
+        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<LinttyDbContext>();
+        var row = await db.Repos.AsNoTracking().FirstAsync(r => r.Id == repoId);
+        Assert.NotNull(row.ScanProjects);
+        Assert.Equal(2, row.ScanProjects!.Length);
+    }
+
+    [Fact]
+    public async Task Preflight_Candidates_Excludes_Yaml()
+    {
+        await ResetAsync();
+        await using var factory = CreateFactory();
+        var (client, _, _) = await SignUpAndGetAuthedClientAsync(
+            factory, "yaml-out@example.com", "YamlOut Co");
+
+        var repoId = await AddRepoAsync(client, "https://github.com/lintty-demo/the-saint");
+
+        // Discovery returns a yaml in addition to sln/csproj — the picker
+        // must NOT show the yaml as a candidate (PR S2: yaml without a
+        // 'projects:' fails the resolver, so it's not user-pickable).
+        factory.FakeRepoTargetDiscovery.ResultsByFullName["lintty-demo/the-saint"] =
+            new RepoTargetDiscoveryResult(
+                SlnFiles: new[] { "Saint.sln" },
+                CsprojFiles: new[] { "src/Saint.Domain/Saint.Domain.csproj" },
+                LinttyYmlFiles: new[] { "lintty.yml" },
+                Truncated: false);
+
+        var resp = await client.GetAsync($"/api/repos/{repoId}/preflight");
+        Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+
+        var candidates = doc.RootElement.GetProperty("candidates");
+        Assert.Equal(2, candidates.GetArrayLength());
+        foreach (var c in candidates.EnumerateArray())
+        {
+            Assert.NotEqual(CandidateKind.Yaml, c.GetProperty("kind").GetString());
+        }
+        // Yaml at root still wins auto-detect (status branch unchanged).
+        Assert.Equal(PreflightStatus.Ready, doc.RootElement.GetProperty("status").GetString());
+        Assert.Equal(CandidateKind.Yaml,
+            doc.RootElement.GetProperty("autoDetected").GetProperty("kind").GetString());
+    }
+
+    [Fact]
+    public async Task SetScanTarget_With_Yaml_Returns_400()
+    {
+        await ResetAsync();
+        await using var factory = CreateFactory();
+        var (client, _, _) = await SignUpAndGetAuthedClientAsync(
+            factory, "yaml-pick@example.com", "YamlPick Co");
+
+        var repoId = await AddRepoAsync(client, "https://github.com/lintty-demo/the-saint-no-sln");
+
+        factory.FakeRepoTargetDiscovery.ResultsByFullName["lintty-demo/the-saint-no-sln"] =
+            new RepoTargetDiscoveryResult(
+                SlnFiles: Array.Empty<string>(),
+                CsprojFiles: Array.Empty<string>(),
+                LinttyYmlFiles: new[] { "lintty.yml" },
+                Truncated: false);
+
+        // Even if a tampered client crafts a PUT with a yaml path, the
+        // service must reject. yaml is not on the picker; it's not in
+        // candidates; the combination check rejects it first regardless.
+        var resp = await client.PutAsJsonAsync($"/api/repos/{repoId}/scan-target", new
+        {
+            projects = new[] { "lintty.yml" },
         });
         Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
@@ -402,7 +471,7 @@ public sealed class RepoPreflightTests : WebInspectorTestBase
     }
 
     [Fact]
-    public async Task SetScanTarget_With_Multiple_Slns_Returns_400()
+    public async Task SetScanTarget_With_Multiple_Slns_Now_Valid()
     {
         await ResetAsync();
         await using var factory = CreateFactory();
@@ -418,11 +487,13 @@ public sealed class RepoPreflightTests : WebInspectorTestBase
                 LinttyYmlFiles: Array.Empty<string>(),
                 Truncated: false);
 
+        // PR S2: multiple slns → 2 independent scans on next trigger; the
+        // PUT accepts the list verbatim (no 1-sln-only rule anymore).
         var resp = await client.PutAsJsonAsync($"/api/repos/{repoId}/scan-target", new
         {
             projects = new[] { "A.sln", "B.sln" },
         });
-        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
     }
 
     [Fact]

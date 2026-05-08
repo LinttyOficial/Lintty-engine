@@ -43,14 +43,16 @@ public static class ScansEndpoints
 
         group.MapPost("/", TriggerScan)
             .WithName("TriggerScan")
-            .WithSummary("Trigger a new scan against a repo in the active org")
+            .WithSummary("Trigger one or more scans against a repo in the active org")
             .WithDescription(
                 "Validates that the repo belongs to the caller's active org and is not " +
-                "soft-deleted, snapshots the current canon version onto the row (§3.7 " +
-                "determinism invariant), and persists the scan with status=queued. The " +
-                "worker picks it up asynchronously; clients poll `GET /api/scans/{public_id}`.")
+                "soft-deleted, snapshots the current canon version onto every new row " +
+                "(§3.7 determinism invariant), and persists each requested target as its " +
+                "own scan with status=queued. Returns `{ publicIds: string[] }` in trigger " +
+                "order. The worker picks rows up asynchronously; clients poll " +
+                "`GET /api/scans/{public_id}` for each one. Sprint 3 PR S2.")
             .Accepts<TriggerScanRequest>("application/json")
-            .Produces<ScanResponse>(StatusCodes.Status201Created, "application/json")
+            .Produces<BatchTriggerResponse>(StatusCodes.Status201Created, "application/json")
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest, "application/json")
             .Produces<ErrorResponse>(StatusCodes.Status401Unauthorized, "application/json")
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound, "application/json");
@@ -108,12 +110,18 @@ public static class ScansEndpoints
             return BadRequest("invalid_payload", "repoId is required and must be > 0.");
         }
 
-        var result = await scanService.TriggerAsync(orgId, userId, body.RepoId, body.Ref, ct).ConfigureAwait(false);
+        var result = await scanService.TriggerAsync(
+            orgId, userId, body.RepoId, body.Ref, body.Targets, ct).ConfigureAwait(false);
 
         return result.Outcome switch
         {
             TriggerScanOutcome.Created
-                => Results.Json(ToResponse(result.Scan!), statusCode: StatusCodes.Status201Created),
+                => Results.Json(
+                    new BatchTriggerResponse
+                    {
+                        PublicIds = result.Scans.Select(s => s.PublicId.ToString("D")).ToArray(),
+                    },
+                    statusCode: StatusCodes.Status201Created),
             TriggerScanOutcome.RepoNotFound
                 => NotFound("Repo not found."),
             TriggerScanOutcome.Error
@@ -259,6 +267,7 @@ public static class ScansEndpoints
         HashContent = s.HashContent,
         Error = s.Error,
         TriggeredByUserId = s.TriggeredByUserId,
+        Target = s.Target,
         Repo = new ScanRepoResponse
         {
             Id = s.Repo.Id,
@@ -299,6 +308,25 @@ public sealed class TriggerScanRequest
     /// resolve HEAD against the repo's default branch", same as the V0
     /// anonymous flow when <c>ref</c> is omitted.</summary>
     [JsonPropertyName("ref")] public string? Ref { get; set; }
+
+    /// <summary>
+    /// Optional per-request override of the targets to expand into scans.
+    /// Each entry must be a repo-relative <c>.sln</c> or <c>.csproj</c>
+    /// path. Sprint 3 PR S2: <c>null</c> or empty falls back to the repo's
+    /// saved <c>scan_projects</c>; if that is also empty, the trigger
+    /// produces a single auto-detect scan.
+    /// </summary>
+    [JsonPropertyName("targets")] public string[]? Targets { get; set; }
+}
+
+/// <summary>
+/// Response for <c>POST /api/scans</c>. Sprint 3 PR S2 — always returns a
+/// list of public ids in trigger order, length 1..N. Clients poll each
+/// id independently; the dashboard renders one row per id.
+/// </summary>
+public sealed class BatchTriggerResponse
+{
+    [JsonPropertyName("publicIds")] public string[] PublicIds { get; set; } = System.Array.Empty<string>();
 }
 
 /// <summary>Wire shape for every scan response (trigger, poll, history list).</summary>
@@ -314,6 +342,7 @@ public sealed class ScanResponse
     [JsonPropertyName("hashContent")] public string? HashContent { get; set; }
     [JsonPropertyName("error")] public string? Error { get; set; }
     [JsonPropertyName("triggeredByUserId")] public long TriggeredByUserId { get; set; }
+    [JsonPropertyName("target")] public string? Target { get; set; }
     [JsonPropertyName("repo")] public ScanRepoResponse Repo { get; set; } = new();
 }
 
