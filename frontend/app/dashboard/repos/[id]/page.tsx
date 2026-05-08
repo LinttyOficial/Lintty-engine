@@ -1,33 +1,28 @@
 "use client";
 
 /**
- * Detalhe do repositório (`/dashboard/repos/[id]`). Sprint 3 / PR F5.
+ * Detalhe do repositório (`/dashboard/repos/[id]`). Sprint 3 / PR F5 +
+ * S1f (preflight + scan-target picker).
  *
  * Três responsabilidades:
- *   1. Carregar `getRepo(id)` + `listRepoScans(id)` em paralelo. Loading,
- *      network error e 404 reusam o mesmo padrão visual de
- *      `app/dashboard/page.tsx`.
- *   2. Disparar um scan via `triggerScan({ repoId })`. Quando o repo é
- *      privado, o botão fica trancado até o usuário conectar GitHub —
- *      idêntico ao `useGitHubConnect()` do badge global. O sucesso do
- *      trigger navega para `/dashboard/scans/{publicId}` (página de F6).
+ *   1. Carregar `getRepo(id)` + `listRepoScans(id)` + `getRepoPreflight(id)`
+ *      em paralelo. Loading, network error e 404 reusam o mesmo padrão
+ *      visual de `app/dashboard/page.tsx`. Falha não-fatal do preflight
+ *      (rede ou 5xx) não bloqueia o resto — o trigger continua disponível
+ *      e o engine vai falhar coerentemente se a config for ruim.
+ *   2. Renderizar um card adaptativo (`<TargetCard />`) por
+ *      `preflight.status`:
+ *        - `ready`            → Trigger card com bloco "Alvo:" + toggle
+ *                              "Trocar alvo" que reaproveita o picker.
+ *        - `needs_config`     → Picker em destaque com "Salvar e analisar
+ *                              agora" (PUT + trigger num click) e "Salvar
+ *                              configuração" (só PUT).
+ *        - `no_dotnet_project` → Mensagem soft + "Recarregar".
  *   3. Listar o histórico de scans (sem polling — F6 cuida do live).
  *
  * Tenant isolation:
- *   - `getRepo` 404 ⇒ "Repositório não encontrado". Mesma mensagem para
- *     "não existe" e "existe em outra org" (§3.5 do ADR 0007). Nunca
- *     mostramos ID nem confirmamos existência cross-tenant.
- *
- * Static export:
- *   - `output: "export"` exige `generateStaticParams` para segmentos
- *     dinâmicos. Geramos um placeholder porque os ids reais são DB-driven
- *     e não conhecidos em build time. `useParams()` lê o id real no
- *     cliente; o `Number(...)` valida e cai em "not found" se quiserem
- *     forçar uma rota inválida.
- *   - Quando hospedado por trás do ASP.NET (em vez de Cloudflare Pages),
- *     o servidor precisa fazer fallback de `/dashboard/repos/<n>/` para
- *     o html gerado. Issue documentada no PR — não é bloqueio para `next
- *     dev` nem para Cloudflare.
+ *   - 404 do `getRepo` e do `setRepoScanTarget` mapeiam para a mesma
+ *     mensagem ("não encontrado"). Nunca confirmamos existência cross-org.
  */
 
 import Link from "next/link";
@@ -43,14 +38,23 @@ import {
 } from "@/lib/github-connect";
 import {
   getRepo,
+  getRepoPreflight,
   gitHubConnectStartUrl,
   listRepoScans,
   parseApiError,
+  setRepoScanTarget,
   triggerScan,
+  type PreflightAutoDetected,
+  type PreflightCandidateKind,
+  type PreflightResult,
   type RepoDetail,
   type ScanStatus,
   type ScanSummary,
 } from "@/lib/dashboard-api";
+import {
+  ScanTargetPicker,
+  describeCandidateKind,
+} from "@/app/dashboard/components/ScanTargetPicker";
 
 // Canon snapshotada pelo backend no momento do trigger (§3.7 do ADR
 // 0007). Hardcode porque o V0 só tem uma — `DefaultCanonVersionProvider`
@@ -122,7 +126,12 @@ export default function RepoDetailPage() {
 
 type LoadState =
   | { kind: "loading" }
-  | { kind: "ready"; repo: RepoDetail; scans: ScanSummary[] }
+  | {
+      kind: "ready";
+      repo: RepoDetail;
+      scans: ScanSummary[];
+      preflight: PreflightResult | null;
+    }
   | { kind: "not_found" }
   | { kind: "error"; message: string };
 
@@ -132,9 +141,10 @@ function RepoDetailBody({ repoId }: { repoId: number }) {
   const load = useCallback(async () => {
     setState({ kind: "loading" });
     try {
-      const [repoRes, scansRes] = await Promise.all([
+      const [repoRes, scansRes, preflightRes] = await Promise.all([
         getRepo(repoId),
         listRepoScans(repoId),
+        getRepoPreflight(repoId),
       ]);
 
       if (repoRes.status === 404) {
@@ -157,12 +167,33 @@ function RepoDetailBody({ repoId }: { repoId: number }) {
         scans = scansRes.body;
       }
 
-      setState({ kind: "ready", repo: repoRes.body, scans });
+      // Preflight é não-fatal: se a discovery falhou (502 transient,
+      // network), seguimos sem o card de configuração — o trigger
+      // continua disponível e o engine retorna erro coerente se a
+      // config for ruim.
+      const preflight =
+        preflightRes.ok && preflightRes.body ? preflightRes.body : null;
+
+      setState({ kind: "ready", repo: repoRes.body, scans, preflight });
     } catch {
       setState({
         kind: "error",
         message: "Falha de rede ao carregar este repositório.",
       });
+    }
+  }, [repoId]);
+
+  // Refresh apenas do preflight, sem mexer em scans/repo.
+  const refreshPreflight = useCallback(async () => {
+    try {
+      const res = await getRepoPreflight(repoId);
+      const next = res.ok && res.body ? res.body : null;
+      setState((prev) =>
+        prev.kind === "ready" ? { ...prev, preflight: next } : prev,
+      );
+    } catch {
+      // Mantém o preflight anterior; um erro transient não deve
+      // limpar a UI configurada.
     }
   }, [repoId]);
 
@@ -180,21 +211,27 @@ function RepoDetailBody({ repoId }: { repoId: number }) {
     <ReadyView
       repo={state.repo}
       scans={state.scans}
+      preflight={state.preflight}
       onScansChanged={() => void load()}
+      onPreflightChanged={() => void refreshPreflight()}
     />
   );
 }
 
-// ── Ready: header + trigger + history ───────────────────────────────────────
+// ── Ready: header + adaptive card + history ─────────────────────────────────
 
 function ReadyView({
   repo,
   scans,
+  preflight,
   onScansChanged,
+  onPreflightChanged,
 }: {
   repo: RepoDetail;
   scans: ScanSummary[];
+  preflight: PreflightResult | null;
   onScansChanged: () => void;
+  onPreflightChanged: () => void;
 }) {
   const label = repoLabelFromUrl(repo.githubUrl);
 
@@ -202,7 +239,12 @@ function ReadyView({
     <div className="max-w-3xl mx-auto space-y-8">
       <BackLink />
       <RepoHeader repo={repo} label={label} />
-      <TriggerCard repo={repo} onTriggered={onScansChanged} />
+      <TargetCard
+        repo={repo}
+        preflight={preflight}
+        onTriggered={onScansChanged}
+        onPreflightChanged={onPreflightChanged}
+      />
       <HistorySection scans={scans} />
     </div>
   );
@@ -270,12 +312,517 @@ function RepoHeader({ repo, label }: { repo: RepoDetail; label: string }) {
   );
 }
 
-// ── Trigger card ────────────────────────────────────────────────────────────
+// ── Adaptive target card ────────────────────────────────────────────────────
+
+/**
+ * Branches on `preflight.status`. When the preflight call failed
+ * altogether (`preflight === null`), we fall back to the legacy trigger
+ * card — better than blocking the page on a transient discovery hiccup.
+ */
+function TargetCard({
+  repo,
+  preflight,
+  onTriggered,
+  onPreflightChanged,
+}: {
+  repo: RepoDetail;
+  preflight: PreflightResult | null;
+  onTriggered: () => void;
+  onPreflightChanged: () => void;
+}) {
+  if (preflight === null) {
+    // Discovery failed — degrade to the basic trigger card.
+    return <TriggerCard repo={repo} onTriggered={onTriggered} />;
+  }
+
+  if (preflight.status === "no_dotnet_project") {
+    return (
+      <NoDotnetCard
+        reason={preflight.reason}
+        onReload={onPreflightChanged}
+      />
+    );
+  }
+
+  if (preflight.status === "needs_config") {
+    return (
+      <NeedsConfigCard
+        repo={repo}
+        preflight={preflight}
+        onTriggered={onTriggered}
+        onPreflightChanged={onPreflightChanged}
+      />
+    );
+  }
+
+  return (
+    <ReadyCard
+      repo={repo}
+      preflight={preflight}
+      onTriggered={onTriggered}
+      onPreflightChanged={onPreflightChanged}
+    />
+  );
+}
+
+// ── Card: ready ─────────────────────────────────────────────────────────────
 
 type TriggerState =
   | { kind: "idle" }
   | { kind: "submitting" }
   | { kind: "error"; message: string };
+
+function ReadyCard({
+  repo,
+  preflight,
+  onTriggered,
+  onPreflightChanged,
+}: {
+  repo: RepoDetail;
+  preflight: PreflightResult;
+  onTriggered: () => void;
+  onPreflightChanged: () => void;
+}) {
+  const router = useRouter();
+  const { status: ghStatus, isLoading: ghLoading } = useGitHubConnect();
+  const [trigger, setTrigger] = useState<TriggerState>({ kind: "idle" });
+  const [editing, setEditing] = useState(false);
+
+  const needsGithub = repo.isPrivate && ghStatus?.connected !== true;
+  const githubChecking = repo.isPrivate && ghLoading;
+  const submitting = trigger.kind === "submitting";
+  const disabled = submitting || needsGithub || githubChecking;
+
+  async function handleTrigger() {
+    if (disabled) return;
+    setTrigger({ kind: "submitting" });
+    try {
+      const res = await triggerScan({ repoId: repo.id });
+      if (res.status === 201 && res.body) {
+        onTriggered();
+        router.push(`/dashboard/scans/${res.body.publicId}/`);
+        return;
+      }
+      if (res.status === 404) {
+        setTrigger({
+          kind: "error",
+          message:
+            "Este repositório não está mais disponível. Volte ao dashboard.",
+        });
+        return;
+      }
+      const err = parseApiError(res);
+      setTrigger({
+        kind: "error",
+        message:
+          err?.message ?? `Erro ${res.status} ao disparar o scan. Tente novamente.`,
+      });
+    } catch {
+      setTrigger({
+        kind: "error",
+        message: "Falha de rede ao disparar o scan. Tente novamente.",
+      });
+    }
+  }
+
+  return (
+    <section
+      aria-labelledby="analyze-title"
+      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+    >
+      <h2
+        id="analyze-title"
+        className="text-lg font-semibold tracking-tight text-ink"
+      >
+        Analisar repositório
+      </h2>
+      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+        O Lintty vai clonar o repositório, rodar o motor Roslyn e gerar
+        um laudo PDF determinístico. O mesmo commit produz o mesmo PDF
+        byte-a-byte.
+      </p>
+      <p className="mt-3 text-xs text-neutral-500">
+        Canon: <span className="font-mono">{CANON_VERSION_DISPLAY}</span> ·
+        snapshotada no momento do trigger.
+      </p>
+
+      <TargetSummary preflight={preflight} />
+
+      {!editing ? (
+        <button
+          type="button"
+          onClick={() => setEditing(true)}
+          className="mt-3 text-sm text-neutral-600 hover:text-ink underline decoration-neutral-300 underline-offset-2 transition"
+        >
+          Trocar alvo
+        </button>
+      ) : (
+        <ChangeTargetPanel
+          repoId={repo.id}
+          preflight={preflight}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            onPreflightChanged();
+          }}
+        />
+      )}
+
+      {needsGithub && !githubChecking && (
+        <div
+          className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="status"
+        >
+          <p className="font-medium">
+            Conecte o GitHub para analisar repositórios privados.
+          </p>
+          <p className="mt-1 text-amber-800/90">
+            Privados exigem um token OAuth do usuário com escopo{" "}
+            <code className="font-mono">repo</code>. Conexão pública (PAT)
+            não basta.
+          </p>
+          <a
+            href={gitHubConnectStartUrl()}
+            className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+          >
+            Conectar GitHub
+          </a>
+        </div>
+      )}
+
+      {trigger.kind === "error" && (
+        <p
+          className="mt-4 text-sm text-sinner"
+          role="alert"
+          aria-live="polite"
+        >
+          {trigger.message}
+        </p>
+      )}
+
+      <div className="mt-5">
+        <button
+          type="button"
+          onClick={handleTrigger}
+          disabled={disabled}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {submitting ? "Disparando..." : "Analisar agora"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function TargetSummary({ preflight }: { preflight: PreflightResult }) {
+  const saved = preflight.scanProjects ?? [];
+  if (saved.length > 0) {
+    return (
+      <div className="mt-5 rounded-md border border-saint/30 bg-saint-bg/60 px-4 py-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-saint">
+          Alvo (escolhido por você)
+        </p>
+        <ul className="mt-2 space-y-1">
+          {saved.map((path) => (
+            <li
+              key={path}
+              className="flex items-baseline gap-2 font-mono text-sm text-ink break-all"
+            >
+              <KindBadge kind={kindFromPath(path)} />
+              <span>{path}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    );
+  }
+  if (preflight.autoDetected) {
+    return <AutoDetectedSummary auto={preflight.autoDetected} />;
+  }
+  return null;
+}
+
+function AutoDetectedSummary({ auto }: { auto: PreflightAutoDetected }) {
+  return (
+    <div className="mt-5 rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">
+        Alvo (detectado automaticamente)
+      </p>
+      <p className="mt-2 flex items-baseline gap-2 font-mono text-sm text-ink break-all">
+        <KindBadge kind={auto.kind} />
+        <span>{auto.path}</span>
+      </p>
+    </div>
+  );
+}
+
+function KindBadge({ kind }: { kind: PreflightCandidateKind }) {
+  return (
+    <span
+      className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-700 bg-white border border-neutral-200 rounded px-1.5 py-0.5 shrink-0"
+      title={describeCandidateKind(kind)}
+    >
+      {kind}
+    </span>
+  );
+}
+
+/**
+ * Inline collapsable picker shown on the ready card when the user clicks
+ * "Trocar alvo". Pre-populates with the current saved selection (or
+ * empty when auto-detect is active). Two save paths:
+ *   - "Salvar nova configuração" → PUT, then refresh preflight.
+ *   - "Voltar para auto-detect"   → PUT with [], then refresh.
+ */
+function ChangeTargetPanel({
+  repoId,
+  preflight,
+  onClose,
+  onSaved,
+}: {
+  repoId: number;
+  preflight: PreflightResult;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [selection, setSelection] = useState<string[]>(
+    () => preflight.scanProjects ?? [],
+  );
+  const [busy, setBusy] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  async function save(projects: string[]) {
+    setBusy(true);
+    setServerError(null);
+    try {
+      const res = await setRepoScanTarget(repoId, projects);
+      if (res.status === 204 || res.ok) {
+        onSaved();
+        return;
+      }
+      if (res.status === 404) {
+        setServerError(
+          "Repositório não está mais disponível. Volte ao dashboard.",
+        );
+        return;
+      }
+      const err = parseApiError(res);
+      setServerError(
+        err?.message ?? `Erro ${res.status} ao salvar a configuração.`,
+      );
+    } catch {
+      setServerError("Falha de rede ao salvar. Tente novamente.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4 md:p-5 space-y-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-semibold text-ink">Trocar alvo</h3>
+        <button
+          type="button"
+          onClick={() => void save([])}
+          disabled={busy}
+          className="text-xs text-neutral-600 hover:text-ink underline decoration-neutral-300 underline-offset-2 transition disabled:opacity-50"
+        >
+          Voltar para auto-detect
+        </button>
+      </div>
+      <ScanTargetPicker
+        candidates={preflight.candidates}
+        selection={selection}
+        onSelectionChange={setSelection}
+        primaryLabel="Salvar nova configuração"
+        cancelLabel="Cancelar"
+        onPrimary={() => void save(selection)}
+        onCancel={onClose}
+        serverError={serverError}
+        busy={busy}
+        truncated={preflight.truncated}
+      />
+    </div>
+  );
+}
+
+// ── Card: needs_config ──────────────────────────────────────────────────────
+
+function NeedsConfigCard({
+  repo,
+  preflight,
+  onTriggered,
+  onPreflightChanged,
+}: {
+  repo: RepoDetail;
+  preflight: PreflightResult;
+  onTriggered: () => void;
+  onPreflightChanged: () => void;
+}) {
+  const router = useRouter();
+  const { status: ghStatus, isLoading: ghLoading } = useGitHubConnect();
+  const [selection, setSelection] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [serverError, setServerError] = useState<string | null>(null);
+
+  const needsGithub = repo.isPrivate && ghStatus?.connected !== true;
+  const githubChecking = repo.isPrivate && ghLoading;
+
+  // PUT then optionally trigger. Two callers:
+  //   - "Salvar e analisar agora" passes withTrigger=true.
+  //   - "Salvar configuração" passes withTrigger=false.
+  // On PUT failure we stay on the page with the error inline; the
+  // trigger never fires unless the save succeeded.
+  async function save(withTrigger: boolean) {
+    if (selection.length === 0) return;
+    setBusy(true);
+    setServerError(null);
+    try {
+      const res = await setRepoScanTarget(repo.id, selection);
+      if (res.status !== 204 && !res.ok) {
+        if (res.status === 404) {
+          setServerError(
+            "Repositório não está mais disponível. Volte ao dashboard.",
+          );
+          return;
+        }
+        const err = parseApiError(res);
+        setServerError(
+          err?.message ?? `Erro ${res.status} ao salvar a configuração.`,
+        );
+        return;
+      }
+
+      if (!withTrigger) {
+        onPreflightChanged();
+        return;
+      }
+
+      // PUT ok — fire trigger. Refresh preflight only on trigger
+      // failure; success navigates away.
+      const tr = await triggerScan({ repoId: repo.id });
+      if (tr.status === 201 && tr.body) {
+        onTriggered();
+        router.push(`/dashboard/scans/${tr.body.publicId}/`);
+        return;
+      }
+      if (tr.status === 404) {
+        setServerError(
+          "Configuração salva, mas o repositório não está mais disponível.",
+        );
+        onPreflightChanged();
+        return;
+      }
+      const trErr = parseApiError(tr);
+      setServerError(
+        trErr?.message ??
+          `Configuração salva, mas erro ${tr.status} ao disparar o scan.`,
+      );
+      onPreflightChanged();
+    } catch {
+      setServerError("Falha de rede ao salvar. Tente novamente.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section
+      aria-labelledby="config-title"
+      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+    >
+      <h2
+        id="config-title"
+        className="text-lg font-semibold tracking-tight text-ink"
+      >
+        Configurar alvo de scan
+      </h2>
+      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+        {preflight.reason ??
+          "Vamos precisar saber o que escanear neste repositório."}
+      </p>
+
+      {needsGithub && !githubChecking && (
+        <div
+          className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          role="status"
+        >
+          <p className="font-medium">
+            Conecte o GitHub para analisar repositórios privados.
+          </p>
+          <p className="mt-1 text-amber-800/90">
+            Você pode salvar a configuração agora; a análise só dispara
+            depois que o token estiver ativo.
+          </p>
+          <a
+            href={gitHubConnectStartUrl()}
+            className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+          >
+            Conectar GitHub
+          </a>
+        </div>
+      )}
+
+      <div className="mt-5">
+        <ScanTargetPicker
+          candidates={preflight.candidates}
+          selection={selection}
+          onSelectionChange={setSelection}
+          primaryLabel="Salvar e analisar agora"
+          secondaryLabel="Salvar configuração"
+          onPrimary={() => void save(true)}
+          onSecondary={() => void save(false)}
+          serverError={serverError}
+          busy={busy}
+          truncated={preflight.truncated}
+        />
+      </div>
+    </section>
+  );
+}
+
+// ── Card: no_dotnet_project ─────────────────────────────────────────────────
+
+function NoDotnetCard({
+  reason,
+  onReload,
+}: {
+  reason: string | null;
+  onReload: () => void;
+}) {
+  return (
+    <section
+      aria-labelledby="no-dotnet-title"
+      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+    >
+      <h2
+        id="no-dotnet-title"
+        className="text-lg font-semibold tracking-tight text-ink"
+      >
+        Sem projeto .NET detectável
+      </h2>
+      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+        {reason ??
+          "Não encontramos .sln, .csproj ou lintty.yml na árvore deste repositório."}
+      </p>
+      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+        Se você acabou de adicionar um arquivo, aguarde alguns minutos e
+        clique em <strong className="text-ink">Recarregar</strong>.
+      </p>
+      <div className="mt-5">
+        <button
+          type="button"
+          onClick={onReload}
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition"
+        >
+          Recarregar
+        </button>
+      </div>
+    </section>
+  );
+}
+
+// ── Legacy trigger card (preflight unavailable) ─────────────────────────────
 
 function TriggerCard({
   repo,
@@ -288,8 +835,6 @@ function TriggerCard({
   const { status: ghStatus, isLoading: ghLoading } = useGitHubConnect();
   const [state, setState] = useState<TriggerState>({ kind: "idle" });
 
-  // Gate: privados exigem GitHub conectado. Public repos podem rodar
-  // sem token (mesma regra do AddRepoModal manual).
   const needsGithub = repo.isPrivate && ghStatus?.connected !== true;
   const githubChecking = repo.isPrivate && ghLoading;
   const submitting = state.kind === "submitting";
@@ -301,8 +846,6 @@ function TriggerCard({
     try {
       const res = await triggerScan({ repoId: repo.id });
       if (res.status === 201 && res.body) {
-        // Histórico será re-carregado quando o usuário voltar; e a
-        // navegação leva para a página de live polling (F6).
         onTriggered();
         router.push(`/dashboard/scans/${res.body.publicId}/`);
         return;
@@ -341,8 +884,8 @@ function TriggerCard({
         Analisar repositório
       </h2>
       <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
-        O Lintty vai clonar o repositório, rodar o motor Roslyn e gerar um
-        laudo PDF determinístico. O mesmo commit produz o mesmo PDF
+        O Lintty vai clonar o repositório, rodar o motor Roslyn e gerar
+        um laudo PDF determinístico. O mesmo commit produz o mesmo PDF
         byte-a-byte.
       </p>
       <p className="mt-3 text-xs text-neutral-500">
@@ -637,6 +1180,12 @@ function repoLabelFromUrl(url: string): string {
   } catch {
     return url;
   }
+}
+
+function kindFromPath(path: string): PreflightCandidateKind {
+  if (/\.sln$/i.test(path)) return "sln";
+  if (/\.csproj$/i.test(path)) return "csproj";
+  return "yaml";
 }
 
 function formatAbsoluteDate(iso: string): string {

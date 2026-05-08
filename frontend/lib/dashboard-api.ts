@@ -88,6 +88,87 @@ export function listRepoScans(
   );
 }
 
+// ── Repo Preflight (Sprint 3 PR S1f) ─────────────────────────────────────
+
+/**
+ * Lifecycle stages for the preflight discovery (see
+ * `Repos/Preflight/IRepoPreflightService.cs::PreflightStatus`):
+ * - `ready`: saved selection or unambiguous auto-detect — scan can run.
+ * - `needs_config`: candidates exist but auto-detect can't pick — user
+ *   must choose between the discovered files.
+ * - `no_dotnet_project`: no `.sln`, `.csproj`, or `lintty.yml` found.
+ */
+export type PreflightStatus = "ready" | "needs_config" | "no_dotnet_project";
+
+/** Candidate file kind, matches `CandidateKind` constants on the backend. */
+export type PreflightCandidateKind = "sln" | "csproj" | "yaml";
+
+export interface PreflightCandidate {
+  kind: PreflightCandidateKind;
+  path: string;
+}
+
+export interface PreflightAutoDetected {
+  kind: PreflightCandidateKind;
+  path: string;
+}
+
+export interface PreflightResult {
+  status: PreflightStatus;
+  /** Present only when `status === "ready"` AND no saved selection — what
+   *  auto-detect would pick. Null when a saved selection exists (the
+   *  selection wins, no auto-detect happens). */
+  autoDetected: PreflightAutoDetected | null;
+  /** Currently saved selection. Null/empty means auto-detect. */
+  scanProjects: string[] | null;
+  /** Every candidate the discovery returned, in stable order
+   *  (yaml first, then sln alpha, then csproj alpha). Always populated
+   *  so the dashboard can offer "change target" even when ready. */
+  candidates: PreflightCandidate[];
+  /** True when discovery hit GitHub's per-tree limit. */
+  truncated: boolean;
+  /** Human-readable explanation for `needs_config`/`no_dotnet_project`.
+   *  Null on `ready`. */
+  reason: string | null;
+}
+
+export function getRepoPreflight(
+  repoId: number,
+): Promise<ApiResponse<PreflightResult>> {
+  return apiFetch<PreflightResult>(
+    `/api/repos/${encodeURIComponent(String(repoId))}/preflight`,
+  );
+}
+
+/**
+ * Persist the user's curated scan target. Empty list clears the saved
+ * selection and returns the repo to auto-detect.
+ *
+ * Valid combinations (enforced by the backend `ValidateCombination` —
+ * we mirror them client-side for fast feedback):
+ *   - `[]` (clears)
+ *   - 1 yaml: `["lintty.yml"]` or `["path/lintty.yml"]`
+ *   - 1 sln:  `["X.sln"]`
+ *   - 1 csproj: `["src/A/A.csproj"]`
+ *   - 2+ csprojs (all `.csproj`): `["src/A/A.csproj", "src/B/B.csproj"]`
+ *
+ * Returns 204 on success (envelope `{ ok: true, body: null }`),
+ * 400 with an `{ error, message }` body on combination errors, 404 on
+ * cross-tenant.
+ */
+export function setRepoScanTarget(
+  repoId: number,
+  projects: string[],
+): Promise<ApiResponse<void>> {
+  return apiFetch<void>(
+    `/api/repos/${encodeURIComponent(String(repoId))}/scan-target`,
+    {
+      method: "PUT",
+      body: JSON.stringify({ projects }),
+    },
+  );
+}
+
 // ── Scans ────────────────────────────────────────────────────────────────
 
 /**
