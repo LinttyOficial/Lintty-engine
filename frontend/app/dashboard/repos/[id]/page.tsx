@@ -45,6 +45,7 @@ import {
   setRepoScanTarget,
   triggerScan,
   type PreflightAutoDetected,
+  type PreflightAutoDetectedKind,
   type PreflightCandidateKind,
   type PreflightResult,
   type RepoDetail,
@@ -370,7 +371,10 @@ function TargetCard({
 type TriggerState =
   | { kind: "idle" }
   | { kind: "submitting" }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  // Multi-PDF outcome (PR S2f): we stay on the page, refresh history,
+  // and show a discreet success banner. count drives the copy.
+  | { kind: "batch_started"; count: number };
 
 function ReadyCard({
   repo,
@@ -393,14 +397,38 @@ function ReadyCard({
   const submitting = trigger.kind === "submitting";
   const disabled = submitting || needsGithub || githubChecking;
 
+  // How many scans this trigger will spawn. Saved scan_projects expands
+  // 1:1 (each path = one independent scan = one PDF); empty means
+  // auto-detect, which always produces exactly one scan.
+  const savedTargets = preflight.scanProjects ?? [];
+  const expectedScans = savedTargets.length > 0 ? savedTargets.length : 1;
+
   async function handleTrigger() {
     if (disabled) return;
     setTrigger({ kind: "submitting" });
     try {
       const res = await triggerScan({ repoId: repo.id });
       if (res.status === 201 && res.body) {
-        onTriggered();
-        router.push(`/dashboard/scans/${res.body.publicId}/`);
+        const ids = res.body.publicIds;
+        // Single scan keeps the legacy UX (auto-navigate to detail);
+        // multi-scan triggers stay here and surface a banner — the
+        // history below repaints with the N new rows after the refetch.
+        if (ids.length === 1) {
+          onTriggered();
+          router.push(`/dashboard/scans/${ids[0]}/`);
+          return;
+        }
+        if (ids.length >= 2) {
+          setTrigger({ kind: "batch_started", count: ids.length });
+          onTriggered();
+          return;
+        }
+        // Defensive: 201 with empty publicIds shouldn't happen — treat
+        // as a transient backend bug and let the user retry.
+        setTrigger({
+          kind: "error",
+          message: "O backend retornou uma lista vazia. Tente novamente.",
+        });
         return;
       }
       if (res.status === 404) {
@@ -424,6 +452,12 @@ function ReadyCard({
       });
     }
   }
+
+  const ctaLabel = submitting
+    ? "Disparando..."
+    : expectedScans === 1
+      ? "Analisar agora"
+      : `Analisar agora — ${expectedScans} PDFs`;
 
   return (
     <section
@@ -500,6 +534,10 @@ function ReadyCard({
         </p>
       )}
 
+      {trigger.kind === "batch_started" && (
+        <BatchStartedBanner count={trigger.count} />
+      )}
+
       <div className="mt-5">
         <button
           type="button"
@@ -507,22 +545,55 @@ function ReadyCard({
           disabled={disabled}
           className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {submitting ? "Disparando..." : "Analisar agora"}
+          {ctaLabel}
         </button>
       </div>
     </section>
   );
 }
 
+/**
+ * Discreet success banner shown on the repo detail card after a
+ * multi-target trigger (PR S2f). We stay on this page because there
+ * are N scans now — opening N tabs would be hostile and the history
+ * below is the natural aggregator.
+ */
+function BatchStartedBanner({ count }: { count: number }) {
+  return (
+    <div
+      className="mt-4 rounded-md border border-saint/30 bg-saint-bg px-4 py-3 text-sm"
+      role="status"
+      aria-live="polite"
+    >
+      <p className="font-semibold text-saint">
+        {count} scans iniciados.
+      </p>
+      <p className="mt-1 text-neutral-700">
+        Acompanhe o progresso abaixo no histórico. Cada scan gera um PDF
+        independente quando terminar.
+      </p>
+    </div>
+  );
+}
+
 function TargetSummary({ preflight }: { preflight: PreflightResult }) {
   const saved = preflight.scanProjects ?? [];
   if (saved.length > 0) {
+    // Header copy adapts to count: 1 saved target reads as "Alvo:",
+    // 2+ promises one PDF per entry so the user knows what to expect
+    // before clicking "Analisar agora".
+    const heading =
+      saved.length === 1
+        ? "Alvo (escolhido por você)"
+        : `Alvos (${saved.length}) — cada execução gera ${saved.length} PDFs`;
     return (
       <div className="mt-5 rounded-md border border-saint/30 bg-saint-bg/60 px-4 py-3">
         <p className="text-xs font-semibold uppercase tracking-wider text-saint">
-          Alvo (escolhido por você)
+          {heading}
         </p>
-        <ul className="mt-2 space-y-1">
+        <ul
+          className={`mt-2 space-y-1 ${saved.length > 1 ? "list-decimal list-inside marker:text-neutral-500 marker:font-mono marker:text-xs" : ""}`}
+        >
           {saved.map((path) => (
             <li
               key={path}
@@ -556,7 +627,14 @@ function AutoDetectedSummary({ auto }: { auto: PreflightAutoDetected }) {
   );
 }
 
-function KindBadge({ kind }: { kind: PreflightCandidateKind }) {
+/**
+ * Kind badge used in the saved-target list and auto-detect summary.
+ * Accepts the wider `PreflightAutoDetectedKind` (which still includes
+ * `yaml`) because auto-detect can surface a root `lintty.yml`. The
+ * picker proper only deals with sln/csproj — see
+ * `ScanTargetPicker.CandidateKindBadge`.
+ */
+function KindBadge({ kind }: { kind: PreflightAutoDetectedKind }) {
   return (
     <span
       className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-700 bg-white border border-neutral-200 rounded px-1.5 py-0.5 shrink-0"
@@ -664,12 +742,14 @@ function NeedsConfigCard({
   const [selection, setSelection] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
+  const [batchStarted, setBatchStarted] = useState<number | null>(null);
 
   const needsGithub = repo.isPrivate && ghStatus?.connected !== true;
   const githubChecking = repo.isPrivate && ghLoading;
 
   // PUT then optionally trigger. Two callers:
-  //   - "Salvar e analisar agora" passes withTrigger=true.
+  //   - "Salvar e analisar agora" / "Salvar e gerar X PDFs" passes
+  //     withTrigger=true.
   //   - "Salvar configuração" passes withTrigger=false.
   // On PUT failure we stay on the page with the error inline; the
   // trigger never fires unless the save succeeded.
@@ -677,6 +757,7 @@ function NeedsConfigCard({
     if (selection.length === 0) return;
     setBusy(true);
     setServerError(null);
+    setBatchStarted(null);
     try {
       const res = await setRepoScanTarget(repo.id, selection);
       if (res.status !== 204 && !res.ok) {
@@ -699,11 +780,29 @@ function NeedsConfigCard({
       }
 
       // PUT ok — fire trigger. Refresh preflight only on trigger
-      // failure; success navigates away.
+      // failure; success either navigates away (1 PDF) or surfaces a
+      // banner + refetches the page (N PDFs).
       const tr = await triggerScan({ repoId: repo.id });
       if (tr.status === 201 && tr.body) {
-        onTriggered();
-        router.push(`/dashboard/scans/${tr.body.publicId}/`);
+        const ids = tr.body.publicIds;
+        if (ids.length === 1) {
+          onTriggered();
+          router.push(`/dashboard/scans/${ids[0]}/`);
+          return;
+        }
+        if (ids.length >= 2) {
+          // Multi-PDF: stay here. Refresh preflight (ready card now
+          // owns the configured selection) and history; the parent's
+          // re-render will swap this NeedsConfigCard for a ReadyCard.
+          setBatchStarted(ids.length);
+          onTriggered();
+          onPreflightChanged();
+          return;
+        }
+        setServerError(
+          "Configuração salva, mas o backend retornou uma lista vazia. Tente novamente.",
+        );
+        onPreflightChanged();
         return;
       }
       if (tr.status === 404) {
@@ -725,6 +824,14 @@ function NeedsConfigCard({
       setBusy(false);
     }
   }
+
+  // CTA copy adapts to selection size: a single target reads "Salvar
+  // e analisar agora" (legacy phrasing); two-or-more spells out the
+  // PDF count so the user can't be surprised by the batch.
+  const primaryLabel =
+    selection.length >= 2
+      ? `Salvar e gerar ${selection.length} PDFs`
+      : "Salvar e analisar agora";
 
   return (
     <section
@@ -763,12 +870,18 @@ function NeedsConfigCard({
         </div>
       )}
 
+      {batchStarted !== null && (
+        <div className="mt-4">
+          <BatchStartedBanner count={batchStarted} />
+        </div>
+      )}
+
       <div className="mt-5">
         <ScanTargetPicker
           candidates={preflight.candidates}
           selection={selection}
           onSelectionChange={setSelection}
-          primaryLabel="Salvar e analisar agora"
+          primaryLabel={primaryLabel}
           secondaryLabel="Salvar configuração"
           onPrimary={() => void save(true)}
           onSecondary={() => void save(false)}
@@ -846,8 +959,21 @@ function TriggerCard({
     try {
       const res = await triggerScan({ repoId: repo.id });
       if (res.status === 201 && res.body) {
-        onTriggered();
-        router.push(`/dashboard/scans/${res.body.publicId}/`);
+        const ids = res.body.publicIds;
+        // Legacy fallback path: preflight unavailable means we couldn't
+        // know the saved scan_projects, so the trigger ran with no
+        // override and the backend either expanded the saved list or
+        // ran a single auto-detect. Either way, navigate to the first
+        // (or only) result; the history below will pick up siblings.
+        if (ids.length >= 1) {
+          onTriggered();
+          router.push(`/dashboard/scans/${ids[0]}/`);
+          return;
+        }
+        setState({
+          kind: "error",
+          message: "O backend retornou uma lista vazia. Tente novamente.",
+        });
         return;
       }
       if (res.status === 404) {
@@ -994,11 +1120,12 @@ function ScanRow({ scan }: { scan: ScanSummary }) {
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <code className="text-xs font-mono text-neutral-700">
               {shortId}
             </code>
             <StatusPill status={scan.status} />
+            {scan.target && <ScanTargetChip target={scan.target} />}
           </div>
           <p className="mt-1 text-xs text-neutral-500">
             {scan.startedAt ? "Iniciado" : "Enfileirado"}{" "}
@@ -1021,6 +1148,36 @@ function ScanRow({ scan }: { scan: ScanSummary }) {
       </div>
     </Link>
   );
+}
+
+/**
+ * Tiny inline chip that disambiguates rows in a multi-PDF batch
+ * (e.g. "Foo.csproj" vs "Bar.csproj" — same repo, same commit). Path
+ * is truncated to the trailing segments to fit alongside the status
+ * pill; the full path lives in the title attribute and shows on hover.
+ */
+function ScanTargetChip({ target }: { target: string }) {
+  const truncated = truncateTargetPath(target);
+  return (
+    <code
+      className="inline-flex items-center text-[10px] font-mono text-neutral-600 bg-neutral-50 border border-neutral-200 rounded px-1.5 py-0.5 truncate max-w-[12rem]"
+      title={target}
+    >
+      {truncated}
+    </code>
+  );
+}
+
+/**
+ * Keeps a path readable inside a row chip: trailing two segments, with
+ * a leading ellipsis when the path is deeper than that. Pure formatting
+ * — `target` itself stays untouched on the page (preserved in the title
+ * tooltip).
+ */
+function truncateTargetPath(path: string): string {
+  const parts = path.split("/");
+  if (parts.length <= 2) return path;
+  return `…/${parts.slice(-2).join("/")}`;
 }
 
 function StatusPill({ status }: { status: ScanStatus }) {
@@ -1182,10 +1339,15 @@ function repoLabelFromUrl(url: string): string {
   }
 }
 
+/**
+ * Saved scan_projects entries are guaranteed to be `.sln` or `.csproj`
+ * paths server-side (PR S2 — yaml entries are rejected with
+ * `invalid_scan_projects`). Default to `csproj` for any unrecognised
+ * shape rather than synthesising a `yaml` badge that would be a lie.
+ */
 function kindFromPath(path: string): PreflightCandidateKind {
   if (/\.sln$/i.test(path)) return "sln";
-  if (/\.csproj$/i.test(path)) return "csproj";
-  return "yaml";
+  return "csproj";
 }
 
 function formatAbsoluteDate(iso: string): string {

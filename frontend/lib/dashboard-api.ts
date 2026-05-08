@@ -88,6 +88,14 @@ export function listRepoScans(
   );
 }
 
+/**
+ * Hard cap on how many targets a single trigger expands into. Mirrors
+ * `ScanService.MaxTargetsPerTrigger` server-side; surfaced here so the
+ * picker can block submission with a friendly inline message instead of
+ * relying on the 400. Bump in lock-step if the backend ever raises it.
+ */
+export const MAX_TARGETS_PER_TRIGGER = 50;
+
 // ── Repo Preflight (Sprint 3 PR S1f) ─────────────────────────────────────
 
 /**
@@ -100,8 +108,21 @@ export function listRepoScans(
  */
 export type PreflightStatus = "ready" | "needs_config" | "no_dotnet_project";
 
-/** Candidate file kind, matches `CandidateKind` constants on the backend. */
-export type PreflightCandidateKind = "sln" | "csproj" | "yaml";
+/**
+ * Candidate file kind for the picker. PR S2 — yaml was dropped from the
+ * user-pickable candidate list because the engine resolver requires a
+ * `projects:` block inside the yaml that we can't verify during a tree
+ * walk. The backend's `BuildOrderedCandidates` only emits sln + csproj.
+ *
+ * Auto-detect can still surface a yaml on the `AutoDetected` channel
+ * (root `lintty.yml` is the engine's preferred entrypoint when present)
+ * — see {@link PreflightAutoDetectedKind}.
+ */
+export type PreflightCandidateKind = "sln" | "csproj";
+
+/** Wider kind for `PreflightAutoDetected` — auto-detect still reports
+ *  yaml when a root `lintty.yml` exists. */
+export type PreflightAutoDetectedKind = "sln" | "csproj" | "yaml";
 
 export interface PreflightCandidate {
   kind: PreflightCandidateKind;
@@ -109,7 +130,7 @@ export interface PreflightCandidate {
 }
 
 export interface PreflightAutoDetected {
-  kind: PreflightCandidateKind;
+  kind: PreflightAutoDetectedKind;
   path: string;
 }
 
@@ -121,9 +142,10 @@ export interface PreflightResult {
   autoDetected: PreflightAutoDetected | null;
   /** Currently saved selection. Null/empty means auto-detect. */
   scanProjects: string[] | null;
-  /** Every candidate the discovery returned, in stable order
-   *  (yaml first, then sln alpha, then csproj alpha). Always populated
-   *  so the dashboard can offer "change target" even when ready. */
+  /** Every user-pickable candidate the discovery returned, in stable
+   *  order (sln alpha first, then csproj alpha). Always populated so
+   *  the dashboard can offer "change target" even when ready. yaml
+   *  files are not included here — see {@link PreflightCandidateKind}. */
   candidates: PreflightCandidate[];
   /** True when discovery hit GitHub's per-tree limit. */
   truncated: boolean;
@@ -144,13 +166,11 @@ export function getRepoPreflight(
  * Persist the user's curated scan target. Empty list clears the saved
  * selection and returns the repo to auto-detect.
  *
- * Valid combinations (enforced by the backend `ValidateCombination` —
- * we mirror them client-side for fast feedback):
- *   - `[]` (clears)
- *   - 1 yaml: `["lintty.yml"]` or `["path/lintty.yml"]`
- *   - 1 sln:  `["X.sln"]`
- *   - 1 csproj: `["src/A/A.csproj"]`
- *   - 2+ csprojs (all `.csproj`): `["src/A/A.csproj", "src/B/B.csproj"]`
+ * PR S2 relaxed the backend validation: any combination of `.sln` +
+ * `.csproj` paths is accepted (each entry becomes one independent scan
+ * at trigger time). Yaml entries are still rejected with
+ * `invalid_scan_projects` because the engine resolver fails on yamls
+ * without a `projects:` block. Hard cap of 50 entries per request.
  *
  * Returns 204 on success (envelope `{ ok: true, body: null }`),
  * 400 with an `{ error, message }` body on combination errors, 404 on
@@ -203,6 +223,10 @@ export interface ScanSummary {
   error: string | null;
   triggeredByUserId: number;
   repo: ScanRepoSummary;
+  /** Repo-relative path of the scan target this run analysed (e.g.
+   *  `src/Foo/Foo.csproj`). Null when the trigger fell back to
+   *  auto-detect (no `targets`, no saved `scan_projects`). */
+  target: string | null;
 }
 
 /**
@@ -216,12 +240,34 @@ export interface ScanTriggerRequest {
   repoId: number;
   /** Optional branch / tag / sha. Null = use repo default branch. */
   ref?: string | null;
+  /**
+   * Optional per-request override for the targets to expand into scans.
+   * Each entry becomes one independent scan (N targets = N PDFs).
+   *
+   * Resolution order (server-side, see `ScanService.cs`):
+   *   1. `targets` non-empty → use as-is.
+   *   2. `targets` null/empty → fall back to the repo's saved
+   *      `scan_projects` (set via {@link setRepoScanTarget}).
+   *   3. Both empty → 1 auto-detect scan.
+   *
+   * Hard cap of 50 entries per trigger.
+   */
+  targets?: string[] | null;
+}
+
+/**
+ * Response of {@link triggerScan}. PR S2 unified the single- and
+ * multi-target flows: callers always receive an array (length 1 for the
+ * common case, length N when expanding multiple targets).
+ */
+export interface BatchTriggerResponse {
+  publicIds: string[];
 }
 
 export function triggerScan(
   req: ScanTriggerRequest,
-): Promise<ApiResponse<ScanDetail>> {
-  return apiFetch<ScanDetail>("/api/scans", {
+): Promise<ApiResponse<BatchTriggerResponse>> {
+  return apiFetch<BatchTriggerResponse>("/api/scans", {
     method: "POST",
     body: JSON.stringify(req),
   });

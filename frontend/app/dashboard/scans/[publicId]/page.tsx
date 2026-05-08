@@ -388,6 +388,16 @@ function ScanHeader({ scan, polling }: { scan: ScanDetail; polling: boolean }) {
         ) : null}
       </p>
       <p className="mt-1 text-xs text-neutral-500">
+        Alvo:{" "}
+        {scan.target ? (
+          <span className="font-mono text-neutral-700 break-all">
+            {scan.target}
+          </span>
+        ) : (
+          <span className="italic">detectado automaticamente</span>
+        )}
+      </p>
+      <p className="mt-1 text-xs text-neutral-500">
         Repositório:{" "}
         <a
           href={scan.repo.githubUrl}
