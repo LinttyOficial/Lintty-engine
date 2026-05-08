@@ -73,33 +73,36 @@ public sealed class Repo
     public DateTime? DeletedAt { get; set; }
 
     /// <summary>
-    /// User-curated default targets to expand into independent scans on the
-    /// next trigger (Sprint 3 PR S1, semantics revised in PR S2). Each entry
-    /// is a repo-relative POSIX path (forward slashes, no leading <c>./</c>)
-    /// to a <c>.sln</c> or <c>.csproj</c>.
+    /// User-curated list of what to scan on the next trigger (Sprint 3 PR S1,
+    /// semantics restored in PR S3 after the PR S2 multi-PDF revert). Each
+    /// entry is a repo-relative POSIX path (forward slashes, no leading
+    /// <c>./</c>) to a <c>.sln</c>, <c>.csproj</c>, or legacy <c>lintty.yml</c>.
     /// <para>
-    /// Semantics consumed by <c>POST /api/scans</c>:
+    /// Semantics consumed by the worker (NOT by the trigger endpoint — the
+    /// trigger always creates exactly <b>one</b> scan row):
     /// </para>
     /// <list type="bullet">
-    ///   <item><description><c>null</c> or empty → 1 scan, auto-detect (the
-    ///         resolver picks the .sln, lintty.yml, or single .csproj).</description></item>
-    ///   <item><description>N entries → <b>N independent scans</b>, one per
-    ///         entry. Each scan row carries its own
-    ///         <see cref="Lintty.WebInspector.Persistence.Entities.Scan.Target"/>
-    ///         and produces its own PDF. Mixed <c>.sln</c> + <c>.csproj</c>
-    ///         is allowed because there is no longer a single combined run.</description></item>
+    ///   <item><description><c>null</c> or empty → resolver runs auto-detect
+    ///         (engine picks the .sln, lintty.yml, or lone .csproj).</description></item>
+    ///   <item><description>1 entry ending in <c>.sln</c> → worker passes
+    ///         <c>--target &lt;abs path&gt;</c>.</description></item>
+    ///   <item><description>1 entry ending in <c>.csproj</c> → worker passes
+    ///         <c>--target &lt;abs path&gt;</c>.</description></item>
+    ///   <item><description>1 legacy <c>lintty.yml</c> entry → worker passes
+    ///         <c>--target &lt;abs path&gt;</c> (the picker no longer offers
+    ///         yaml; only old rows still surface this).</description></item>
+    ///   <item><description>2+ entries, all <c>.csproj</c> → worker writes a
+    ///         transient <c>.lintty-runtime.yml</c> in the sandbox declaring
+    ///         <c>projects:</c> and passes <c>--target &lt;runtime yml&gt;</c>.
+    ///         The engine aggregates the listed projects into a <b>single
+    ///         combined PDF</b> — one job, one report, one download.</description></item>
     /// </list>
     /// <para>
-    /// <b><c>lintty.yml</c> is not accepted here.</b> The picker filters
-    /// yaml entries out of the candidate list (<c>RepoPreflightService</c>);
-    /// the trigger endpoint defensively rejects yaml entries with 400 even
-    /// if a legacy row somehow contains one. yaml without a <c>projects:</c>
-    /// declaration would fail the engine resolver — the bug PR S2 closes.
-    /// </para>
-    /// <para>
-    /// Per-trigger override: <c>POST /api/scans { targets: [...] }</c>
-    /// supersedes this column. The saved value is the default applied when
-    /// the request omits <c>targets</c>.
+    /// Combination validation runs at PUT time
+    /// (<see cref="Lintty.WebInspector.Repos.Preflight.IRepoPreflightService.SetScanProjectsAsync"/>).
+    /// Anything that's not one of the shapes above (multiple slns,
+    /// sln+csproj mixed, etc.) is rejected with 400 because the engine
+    /// resolver can't ingest it.
     /// </para>
     /// </summary>
     public string[]? ScanProjects { get; set; }

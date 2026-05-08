@@ -109,14 +109,11 @@ public sealed class ScansEndpointsTests : WebInspectorTestBase
         });
         Assert.Equal(HttpStatusCode.Created, resp.StatusCode);
 
-        // PR S2: trigger response is { publicIds: string[] }. With no targets
-        // and no saved scan_projects, the service produces a single auto-detect
-        // scan — the array always has length >= 1.
+        // PR S3 (post-S2-revert): trigger response is the full ScanResponse
+        // for the single new row. publicId is a canonical UUID 'D' string;
+        // status/canon/ref are populated at trigger time.
         using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-        var publicIds = doc.RootElement.GetProperty("publicIds");
-        Assert.Equal(JsonValueKind.Array, publicIds.ValueKind);
-        Assert.Equal(1, publicIds.GetArrayLength());
-        var publicIdStr = publicIds[0].GetString();
+        var publicIdStr = doc.RootElement.GetProperty("publicId").GetString();
         Assert.NotNull(publicIdStr);
         // Parse with strict format ("D" — 8-4-4-4-12 lowercased hex with dashes)
         // and assert variant + version (UUID v4 → version nibble == 4).
@@ -128,18 +125,11 @@ public sealed class ScansEndpointsTests : WebInspectorTestBase
         // RFC 4122 variant: top two bits of bytes[8] are 10.
         Assert.Equal(0x80, bytes[8] & 0xC0);
 
-        // Detail check via GET — the trigger only carries ids now, so the
-        // status/canon/ref assertions move here.
-        var detail = await client.GetAsync($"/api/scans/{publicId:D}");
-        detail.EnsureSuccessStatusCode();
-        using var detailDoc = JsonDocument.Parse(await detail.Content.ReadAsStringAsync());
-        Assert.Equal("queued", detailDoc.RootElement.GetProperty("status").GetString());
-        Assert.Equal("1.0.0", detailDoc.RootElement.GetProperty("canonVersion").GetString());
-        Assert.Equal("main", detailDoc.RootElement.GetProperty("ref").GetString());
-        Assert.Equal(userId, detailDoc.RootElement.GetProperty("triggeredByUserId").GetInt64());
-        Assert.Equal(repoId, detailDoc.RootElement.GetProperty("repo").GetProperty("id").GetInt64());
-        // Auto-detect scan: target column is null on the row and in the response.
-        Assert.Equal(JsonValueKind.Null, detailDoc.RootElement.GetProperty("target").ValueKind);
+        Assert.Equal("queued", doc.RootElement.GetProperty("status").GetString());
+        Assert.Equal("1.0.0", doc.RootElement.GetProperty("canonVersion").GetString());
+        Assert.Equal("main", doc.RootElement.GetProperty("ref").GetString());
+        Assert.Equal(userId, doc.RootElement.GetProperty("triggeredByUserId").GetInt64());
+        Assert.Equal(repoId, doc.RootElement.GetProperty("repo").GetProperty("id").GetInt64());
 
         // Sanity-check the row landed in Postgres with the same values — the
         // wire response could in principle drift from the persisted row, so
@@ -158,7 +148,6 @@ public sealed class ScansEndpointsTests : WebInspectorTestBase
         Assert.Null(row.HashContent);
         Assert.Null(row.CompletedAt);
         Assert.Null(row.StartedAt);
-        Assert.Null(row.Target);
     }
 
     // ── GET /api/scans/{public_id} ─────────────────────────────────────────
@@ -186,7 +175,7 @@ public sealed class ScansEndpointsTests : WebInspectorTestBase
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
-            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, "feature/x", targets: null, CancellationToken.None);
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, "feature/x", CancellationToken.None);
             Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
             publicId = trigger.Scan!.PublicId;
         }
@@ -230,7 +219,7 @@ public sealed class ScansEndpointsTests : WebInspectorTestBase
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
-            var trigger = await scanService.TriggerAsync(orgIdA, userIdA, aRepoId, null, targets: null, CancellationToken.None);
+            var trigger = await scanService.TriggerAsync(orgIdA, userIdA, aRepoId, null, CancellationToken.None);
             publicIdA = trigger.Scan!.PublicId;
         }
 
@@ -266,7 +255,7 @@ public sealed class ScansEndpointsTests : WebInspectorTestBase
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
-            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, null, targets: null, CancellationToken.None);
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, null, CancellationToken.None);
             publicId = trigger.Scan!.PublicId;
         }
 
@@ -296,7 +285,7 @@ public sealed class ScansEndpointsTests : WebInspectorTestBase
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
-            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, null, targets: null, CancellationToken.None);
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, null, CancellationToken.None);
             publicId = trigger.Scan!.PublicId;
 
             // Force the row to completed with no artifact on disk — the
@@ -349,7 +338,7 @@ public sealed class ScansEndpointsTests : WebInspectorTestBase
         await using (var scope = factory.Services.CreateAsyncScope())
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
-            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, null, targets: null, CancellationToken.None);
+            var trigger = await scanService.TriggerAsync(orgId, userId, repoId, null, CancellationToken.None);
             publicId = trigger.Scan!.PublicId;
 
             // Reserve + write the PDF on the same store the endpoint reads

@@ -231,7 +231,7 @@ public sealed class TenantIsolationTests : WebInspectorTestBase
         {
             var scanService = scope.ServiceProvider.GetRequiredService<IScanService>();
             var trigger = await scanService.TriggerAsync(
-                orgIdB, userIdB, repoIdB, gitRef: null, targets: null, CancellationToken.None);
+                orgIdB, userIdB, repoIdB, gitRef: null, CancellationToken.None);
             Assert.Equal(TriggerScanOutcome.Created, trigger.Outcome);
             scanPublicIdB = trigger.Scan!.PublicId;
         }

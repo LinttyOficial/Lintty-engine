@@ -3,6 +3,7 @@ using System;
 using Lintty.WebInspector.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Lintty.WebInspector.Persistence.Migrations
 {
     [DbContext(typeof(LinttyDbContext))]
-    partial class LinttyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260508220000_Drop_Scan_Target")]
+    partial class Drop_Scan_Target
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

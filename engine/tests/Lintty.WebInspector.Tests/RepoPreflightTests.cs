@@ -373,7 +373,7 @@ public sealed class RepoPreflightTests : WebInspectorTestBase
     }
 
     [Fact]
-    public async Task SetScanTarget_With_Mixed_Sln_And_Csproj_Now_Valid()
+    public async Task SetScanTarget_With_Mixed_Sln_And_Csproj_Returns_400()
     {
         await ResetAsync();
         await using var factory = CreateFactory();
@@ -389,20 +389,18 @@ public sealed class RepoPreflightTests : WebInspectorTestBase
                 LinttyYmlFiles: Array.Empty<string>(),
                 Truncated: false);
 
-        // PR S2: each entry expands into its own scan, so any mix of sln +
-        // csproj is now valid. The PUT persists the list verbatim;
-        // triggering it later would create 2 scans (1 per entry).
+        // PR S3 (post-S2-revert): single trigger = single scan = single PDF.
+        // The engine resolver can't ingest a sln+csproj mix (sln defines its
+        // own project graph; csproj entries would be redundant or
+        // contradictory), so the PUT must reject the combination at validate
+        // time before the worker ever sees it.
         var resp = await client.PutAsJsonAsync($"/api/repos/{repoId}/scan-target", new
         {
             projects = new[] { "Saint.sln", "src/Saint.Domain/Saint.Domain.csproj" },
         });
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
-
-        await using var scope = factory.Services.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<LinttyDbContext>();
-        var row = await db.Repos.AsNoTracking().FirstAsync(r => r.Id == repoId);
-        Assert.NotNull(row.ScanProjects);
-        Assert.Equal(2, row.ScanProjects!.Length);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        Assert.Equal("invalid_scan_projects", doc.RootElement.GetProperty("error").GetString());
     }
 
     [Fact]
@@ -471,7 +469,7 @@ public sealed class RepoPreflightTests : WebInspectorTestBase
     }
 
     [Fact]
-    public async Task SetScanTarget_With_Multiple_Slns_Now_Valid()
+    public async Task SetScanTarget_With_Multiple_Slns_Returns_400()
     {
         await ResetAsync();
         await using var factory = CreateFactory();
@@ -487,13 +485,16 @@ public sealed class RepoPreflightTests : WebInspectorTestBase
                 LinttyYmlFiles: Array.Empty<string>(),
                 Truncated: false);
 
-        // PR S2: multiple slns → 2 independent scans on next trigger; the
-        // PUT accepts the list verbatim (no 1-sln-only rule anymore).
+        // PR S3 (post-S2-revert): one trigger = one scan = one PDF. Two slns
+        // can't be merged into a single engine run (the engine takes one
+        // solution OR a projects: list), so reject at PUT.
         var resp = await client.PutAsJsonAsync($"/api/repos/{repoId}/scan-target", new
         {
             projects = new[] { "A.sln", "B.sln" },
         });
-        Assert.Equal(HttpStatusCode.NoContent, resp.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, resp.StatusCode);
+        using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+        Assert.Equal("invalid_scan_projects", doc.RootElement.GetProperty("error").GetString());
     }
 
     [Fact]

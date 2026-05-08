@@ -252,13 +252,13 @@ public sealed class RepoPreflightService : IRepoPreflightService
     }
 
     /// <summary>
-    /// Sprint 3 PR S2 — combination validity. Each entry expands into its
-    /// own scan row, so any mix of <c>.sln</c> + <c>.csproj</c> is allowed.
-    /// yaml is rejected because the engine resolver fails on a
-    /// <c>lintty.yml</c> without a <c>projects:</c> declaration (the bug
-    /// PR S2 closes). The maximum batch size is enforced here too so a
-    /// PUT can't seed a value the trigger endpoint would later reject.
-    /// Returns a human message when invalid, <c>null</c> when valid.
+    /// Combination validity per spec (PR S1, restored in PR S3 after the
+    /// PR S2 multi-PDF revert): empty (handled outside), 1 sln, 1 csproj,
+    /// 1 legacy yaml, or 2+ all-csproj. Anything else is invalid because
+    /// the engine resolver / runtime-yaml synthesis can't ingest it.
+    /// The maximum batch size is enforced here too so a PUT can't seed
+    /// a value the worker would later reject. Returns a human message
+    /// when invalid, <c>null</c> when valid.
     /// </summary>
     private static string? ValidateCombination(IReadOnlyList<string> projects)
     {
@@ -266,26 +266,25 @@ public sealed class RepoPreflightService : IRepoPreflightService
         if (projects.Count > maxEntries)
             return $"Selection is too large ({projects.Count.ToString(System.Globalization.CultureInfo.InvariantCulture)} entries); pick at most {maxEntries.ToString(System.Globalization.CultureInfo.InvariantCulture)}.";
 
+        var yaml = 0;
         var sln = 0;
         var csproj = 0;
+        var unknown = 0;
         foreach (var p in projects)
         {
             if (string.IsNullOrEmpty(p)) return "Empty path is not allowed.";
             if (p.EndsWith(".sln", StringComparison.OrdinalIgnoreCase)) sln++;
             else if (p.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase)) csproj++;
             else if (string.Equals(p, "lintty.yml", StringComparison.OrdinalIgnoreCase)
-                  || p.EndsWith("/lintty.yml", StringComparison.OrdinalIgnoreCase)
-                  || p.EndsWith(".yml", StringComparison.OrdinalIgnoreCase)
-                  || p.EndsWith(".yaml", StringComparison.OrdinalIgnoreCase))
-            {
-                return $"Path '{p}' is a yaml file; only .sln or .csproj entries are accepted.";
-            }
-            else
-            {
-                return $"Path '{p}' must end in .sln or .csproj.";
-            }
+                  || p.EndsWith("/lintty.yml", StringComparison.OrdinalIgnoreCase)) yaml++;
+            else unknown++;
         }
-        if (sln + csproj == 0) return "Selection is empty.";
+        if (unknown > 0) return "Only .sln, .csproj, or lintty.yml paths are allowed.";
+        if (sln > 1) return "Pick a single .sln, not multiple.";
+        if (yaml > 1) return "Pick a single lintty.yml, not multiple.";
+        if (sln + yaml > 0 && csproj > 0)
+            return "Cannot mix .sln/lintty.yml with .csproj. Pick a solution OR a project list.";
+        if (sln + yaml + csproj == 0) return "Selection is empty.";
         return null;
     }
 
