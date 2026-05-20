@@ -251,6 +251,63 @@ public sealed class AuthGithubConnectTests : WebInspectorTestBase
         Assert.Equal("alice-original", link.Username);
     }
 
+    [Fact]
+    public async Task Connect_Callback_With_Github_Identity_Owned_By_Another_User_Redirects_With_Reason()
+    {
+        // Regression: before this guard, the connect flow would attempt an
+        // INSERT into external_logins for the current Lintty user even when
+        // the (provider, provider_user_id) was already claimed by a different
+        // user, tripping the global unique index
+        // ix_external_logins_provider_provider_user_id with a Postgres 23505
+        // and surfacing as a 500 stack trace to the user. The fix detects the
+        // cross-user collision up-front and 302s back to the dashboard with a
+        // machine-readable reason the frontend can humanize.
+        await ResetAsync();
+        await using var factory = CreateFactory();
+        factory.EnableGitHubOAuth = true;
+
+        // User A "owns" provider_user_id=77777.
+        var (clientA, _, userAId) = await SignUpNonFollowingAsync(
+            factory, "owner@example.com", "Owner Co");
+        await using (var seed = factory.Services.CreateAsyncScope())
+        {
+            var db = seed.ServiceProvider.GetRequiredService<LinttyDbContext>();
+            db.ExternalLogins.Add(new ExternalLogin
+            {
+                UserId = userAId,
+                Provider = "github",
+                ProviderUserId = "77777",
+                Username = "owner-handle",
+                LinkedAt = DateTime.UtcNow,
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // User B authenticates as the SAME GitHub identity (77777).
+        var (clientB, _, userBId) = await SignUpNonFollowingAsync(
+            factory, "intruder@example.com", "Intruder Co");
+        factory.FakeGitHubOAuth.Profile = new GitHubUserProfile(
+            ProviderUserId: "77777",
+            Login: "owner-handle",
+            Name: "Owner",
+            Email: "owner@example.com");
+
+        var (cb, _) = await DriveStartAndCallbackAsync(clientB);
+        Assert.Equal(HttpStatusCode.Redirect, cb.StatusCode);
+        Assert.Equal(
+            "/dashboard?github_connect=error&reason=github_already_linked_to_another_account",
+            cb.Headers.Location?.ToString());
+
+        // User A's row is untouched; user B got no link and no token.
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db2 = scope.ServiceProvider.GetRequiredService<LinttyDbContext>();
+        Assert.Equal(0, await db2.GithubUserTokens.CountAsync(t => t.UserId == userBId));
+        Assert.Equal(0, await db2.ExternalLogins.CountAsync(e => e.UserId == userBId));
+        var ownerLink = await db2.ExternalLogins.SingleAsync(e => e.UserId == userAId);
+        Assert.Equal("77777", ownerLink.ProviderUserId);
+        Assert.Equal("owner-handle", ownerLink.Username);
+    }
+
     // ── GET /connect (status) ─────────────────────────────────────────────
 
     [Fact]

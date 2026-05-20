@@ -118,6 +118,7 @@ export function GitHubConnectCallback() {
  *   - github_oauth_exchange_failed                  → upstream code rejected.
  *   - insufficient_scopes                           → user deselected on prompt.
  *   - github_identity_mismatch                      → linked under another login.
+ *   - github_already_linked_to_another_account      → identity belongs to another Lintty user.
  *   - github_oauth_not_configured                   → server-side ClientId/Secret missing.
  * Anything outside this list falls through to a neutral retry message.
  */
@@ -137,6 +138,8 @@ function humanizeReason(reason: string | null): string {
     case "github_identity_mismatch":
     case "identity_mismatch":
       return "A conta GitHub que autorizou é diferente da já vinculada à sua conta Lintty. Faça logout no github.com e tente novamente com a conta certa.";
+    case "github_already_linked_to_another_account":
+      return "Essa conta GitHub já está vinculada a outra conta Lintty. Faça logout no github.com e autorize com uma conta GitHub diferente, ou entre na conta Lintty que já é dona dessa identidade.";
     case "github_oauth_not_configured":
       return "O servidor não está configurado para GitHub Connect no momento. Avise um admin.";
     default:

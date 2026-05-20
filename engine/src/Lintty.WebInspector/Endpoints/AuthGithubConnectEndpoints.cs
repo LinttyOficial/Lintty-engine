@@ -46,7 +46,7 @@ namespace Lintty.WebInspector.Endpoints;
 /// always return a <c>302</c> back into the SPA, never a JSON error page.
 /// <list type="bullet">
 ///   <item><description>Success: <c>302 Location: /dashboard?github_connect=success</c>.</description></item>
-///   <item><description>Validation failure (state mismatch, missing query, scopes deselected, identity mismatch, exchange error): <c>302 Location: /dashboard?github_connect=error&amp;reason=&lt;code&gt;</c> where <c>&lt;code&gt;</c> is the same machine-readable identifier (e.g. <c>invalid_oauth_state</c>, <c>insufficient_scopes</c>, <c>github_identity_mismatch</c>, <c>github_oauth_exchange_failed</c>, <c>invalid_oauth_callback</c>) the frontend maps to human copy.</description></item>
+///   <item><description>Validation failure (state mismatch, missing query, scopes deselected, identity mismatch, exchange error): <c>302 Location: /dashboard?github_connect=error&amp;reason=&lt;code&gt;</c> where <c>&lt;code&gt;</c> is the same machine-readable identifier (e.g. <c>invalid_oauth_state</c>, <c>insufficient_scopes</c>, <c>github_identity_mismatch</c>, <c>github_already_linked_to_another_account</c>, <c>github_oauth_exchange_failed</c>, <c>invalid_oauth_callback</c>) the frontend maps to human copy.</description></item>
 ///   <item><description><c>github_oauth_not_configured</c> stays a <c>503 application/json</c> on purpose — that's a server misconfiguration, not a user error, and we want it to fail visibly in operator dashboards instead of being swallowed by a banner.</description></item>
 ///   <item><description>Anonymous (no Lintty session at callback time) keeps its <c>401 application/json</c> — non-browser callers (curl/CI) and lost-session navigations both benefit from the explicit error.</description></item>
 /// </list>
@@ -206,14 +206,32 @@ public static class AuthGithubConnectEndpoints
 
         // Identity reconciliation. The user is logged in via a Lintty cookie;
         // they may or may not already have an external_logins row:
-        //  - If absent (signed up via email/password): create the link.
-        //  - If present and provider_user_id matches: keep going.
-        //  - If present and provider_user_id MISMATCHES: refuse — the user is
-        //    granting OAuth from a different GitHub account than the one
-        //    already linked. Persisting that would silently let two GitHub
-        //    identities share the same Lintty user (Apêndice E §E.7
-        //    separation-of-identity invariant).
-        var existingLink = await db.ExternalLogins
+        //  - If the incoming GitHub identity is already linked to a DIFFERENT
+        //    Lintty user: refuse with github_already_linked_to_another_account.
+        //    The DB has a global unique index on (provider, provider_user_id)
+        //    (ix_external_logins_provider_provider_user_id), so a naive INSERT
+        //    would trip a 23505 and surface as a 500 stack trace to the user.
+        //  - If absent for the current user (signed up via email/password):
+        //    create the link.
+        //  - If present for the current user and provider_user_id matches:
+        //    keep going (refresh username if it drifted).
+        //  - If present for the current user but provider_user_id MISMATCHES:
+        //    refuse with github_identity_mismatch — the user is granting OAuth
+        //    from a different GitHub account than the one already linked.
+        //    Persisting that would silently let two GitHub identities share
+        //    the same Lintty user (Apêndice E §E.7 separation-of-identity).
+        var byIdentity = await db.ExternalLogins
+            .FirstOrDefaultAsync(e => e.Provider == "github" && e.ProviderUserId == profile.ProviderUserId, ct)
+            .ConfigureAwait(false);
+        if (byIdentity is not null && byIdentity.UserId != userId)
+        {
+            log.LogWarning(
+                "GitHub connect rejected: identity already linked to another user current_user_id={UserId} provider_user_id={ProviderUserId} owner_user_id={OwnerUserId}",
+                userId, profile.ProviderUserId, byIdentity.UserId);
+            return RedirectError("github_already_linked_to_another_account");
+        }
+
+        var existingLink = byIdentity ?? await db.ExternalLogins
             .FirstOrDefaultAsync(e => e.UserId == userId && e.Provider == "github", ct)
             .ConfigureAwait(false);
         if (existingLink is null)
