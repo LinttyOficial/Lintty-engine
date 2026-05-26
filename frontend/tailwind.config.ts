@@ -40,6 +40,8 @@ const config: Config = {
           "sans-serif",
         ],
         mono: [
+          "var(--font-jetbrains)",
+          "JetBrains Mono",
           "ui-monospace",
           "SFMono-Regular",
           "Menlo",

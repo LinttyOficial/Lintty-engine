@@ -100,22 +100,22 @@ export function InspectFailed({
 
   return (
     <section className="mt-10" aria-labelledby="failed-heading">
-      <div className="bg-white border border-sinner/20 rounded-xl p-6 md:p-8 shadow-sm">
-        <p className="text-xs font-semibold tracking-widest text-sinner uppercase">
+      <div className="lt-card-form p-6 md:p-8" style={{ borderColor: "rgba(220, 38, 38, 0.35)" }}>
+        <p className="text-xs font-semibold tracking-widest text-red-300 uppercase">
           Falha na análise
         </p>
-        <h2 id="failed-heading" className="mt-2 text-2xl font-bold tracking-tight">
+        <h2 id="failed-heading" className="mt-2 text-2xl font-bold tracking-tight text-paper">
           <span>{title}</span>
         </h2>
-        <p className="mt-3 text-sm text-neutral-700">{message}</p>
+        <p className="mt-3 text-sm text-neutral-300">{message}</p>
         {showRawDetail && (
-          <p className="mt-3 text-xs font-mono text-neutral-500 bg-neutral-50 border border-neutral-200 rounded px-3 py-2 whitespace-pre-wrap break-words">
+          <p className="mt-3 text-xs font-mono text-neutral-400 bg-black/40 border border-neutral-800/60 rounded px-3 py-2 whitespace-pre-wrap break-words">
             {errorDetail}
           </p>
         )}
 
-        <div className="mt-6 bg-saint-bg border border-saint/20 rounded-md px-4 py-3 text-sm text-saint">
-          <strong>Fallback recomendado:</strong> rode o motor localmente, sem limite de
+        <div className="mt-6 lt-alert-info">
+          <strong className="text-emerald-200">Fallback recomendado:</strong> rode o motor localmente, sem limite de
           tempo e sem expor o repositório.{" "}
           <Link href="/cli" className="font-semibold underline">
             Baixar CLI local →
@@ -126,13 +126,13 @@ export function InspectFailed({
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-ink text-white font-semibold hover:bg-neutral-800 transition"
+            className="lt-btn-primary"
           >
             Tentar novamente
           </button>
           <Link
             href="/cli"
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-md border border-neutral-300 text-neutral-800 font-medium hover:bg-neutral-100 transition"
+            className="lt-btn-secondary"
           >
             Baixar CLI local
           </Link>

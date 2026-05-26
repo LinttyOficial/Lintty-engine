@@ -32,6 +32,8 @@ interface InspectFormProps {
   onSubmit: (payload: InspectFormPayload) => void;
   /** Limpa erros do pai quando usuário começa a digitar de novo. */
   onClearErrors: () => void;
+  /** URL pré-preenchida (vinda de ?url= na home). */
+  defaultUrl?: string;
 }
 
 export function InspectForm({
@@ -40,8 +42,9 @@ export function InspectForm({
   urlError,
   onSubmit,
   onClearErrors,
+  defaultUrl = "",
 }: InspectFormProps) {
-  const [githubUrl, setGithubUrl] = useState("");
+  const [githubUrl, setGithubUrl] = useState(defaultUrl);
   const [ref, setRef] = useState("");
   const [solutionPath, setSolutionPath] = useState("");
   const [githubToken, setGithubToken] = useState("");
@@ -84,13 +87,13 @@ export function InspectForm({
       <form
         noValidate
         onSubmit={handleSubmit}
-        className="bg-white border border-neutral-200 rounded-xl p-6 md:p-8 shadow-sm space-y-6"
+        className="lt-card-form p-6 md:p-8 space-y-6"
       >
         {/* URL do GitHub */}
         <div>
-          <label htmlFor="github_url" className="block text-sm font-semibold mb-2">
+          <label htmlFor="github_url" className="block text-sm font-semibold mb-2 text-paper">
             URL do GitHub
-            <span className="text-sinner" aria-hidden="true">
+            <span className="text-red-300" aria-hidden="true">
               {" *"}
             </span>
           </label>
@@ -108,10 +111,10 @@ export function InspectForm({
               onClearErrors();
             }}
             aria-invalid={effectiveUrlError ? "true" : undefined}
-            className="w-full px-4 py-3 border border-neutral-300 rounded-md font-mono text-sm bg-white focus:border-saint focus:outline-none transition"
+            className="lt-input font-mono"
           />
           <p className="mt-2 text-xs text-neutral-500">
-            Apenas <code className="font-mono">github.com</code>. Self-hosted Enterprise /
+            Apenas <code className="font-mono text-neutral-300">github.com</code>. Self-hosted Enterprise /
             GitLab / Bitbucket entram em V1.
           </p>
           {effectiveUrlError && (
@@ -123,7 +126,7 @@ export function InspectForm({
 
         {/* Branch */}
         <div>
-          <label htmlFor="ref" className="block text-sm font-semibold mb-2">
+          <label htmlFor="ref" className="block text-sm font-semibold mb-2 text-paper">
             Branch ou commit{" "}
             <span className="text-neutral-500 font-normal">(opcional)</span>
           </label>
@@ -135,7 +138,7 @@ export function InspectForm({
             placeholder="main"
             value={ref}
             onChange={(e) => setRef(e.target.value)}
-            className="w-full px-4 py-3 border border-neutral-300 rounded-md font-mono text-sm bg-white focus:border-saint focus:outline-none transition"
+            className="lt-input font-mono"
           />
           <p className="mt-2 text-xs text-neutral-500">
             Default: branch principal do repositório.
@@ -144,7 +147,7 @@ export function InspectForm({
 
         {/* Solution path */}
         <div>
-          <label htmlFor="solution_path" className="block text-sm font-semibold mb-2">
+          <label htmlFor="solution_path" className="block text-sm font-semibold mb-2 text-paper">
             Caminho da solution{" "}
             <span className="text-neutral-500 font-normal">(opcional)</span>
           </label>
@@ -156,25 +159,25 @@ export function InspectForm({
             placeholder="src/MyApp.sln"
             value={solutionPath}
             onChange={(e) => setSolutionPath(e.target.value)}
-            className="w-full px-4 py-3 border border-neutral-300 rounded-md font-mono text-sm bg-white focus:border-saint focus:outline-none transition"
+            className="lt-input font-mono"
           />
           <p className="mt-2 text-xs text-neutral-500">
             Em branco, descobrimos automaticamente:{" "}
-            <code className="font-mono">.sln</code> na raiz,{" "}
-            <code className="font-mono">lintty.yml</code> com{" "}
-            <code className="font-mono">projects:</code>, ou um{" "}
-            <code className="font-mono">.csproj</code> único.
+            <code className="font-mono text-neutral-300">.sln</code> na raiz,{" "}
+            <code className="font-mono text-neutral-300">lintty.yml</code> com{" "}
+            <code className="font-mono text-neutral-300">projects:</code>, ou um{" "}
+            <code className="font-mono text-neutral-300">.csproj</code> único.
           </p>
         </div>
 
         {/* Token GitHub (V0: aviso) */}
-        <details className="border border-neutral-200 rounded-md">
-          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
+        <details className="border border-neutral-800/60 rounded-md">
+          <summary className="cursor-pointer select-none px-4 py-3 text-sm font-medium text-neutral-300 hover:bg-white/5">
             Repositório privado &middot; token GitHub
           </summary>
           <div className="px-4 pb-4 pt-1 space-y-3">
-            <div className="bg-sinner-bg border border-sinner/20 text-sinner text-sm rounded-md px-4 py-3">
-              <strong>V0:</strong> o campo é validado mas o clone privado ainda não está
+            <div className="lt-alert-danger">
+              <strong className="text-paper">V0:</strong> o campo é validado mas o clone privado ainda não está
               habilitado no Web Inspector. Para repo privado, baixe o{" "}
               <Link href="/cli" className="underline font-semibold">
                 CLI local
@@ -184,7 +187,7 @@ export function InspectForm({
             <div>
               <label
                 htmlFor="github_token"
-                className="block text-sm font-semibold mb-2"
+                className="block text-sm font-semibold mb-2 text-paper"
               >
                 Personal Access Token{" "}
                 <span className="text-neutral-500 font-normal">
@@ -199,10 +202,10 @@ export function InspectForm({
                 placeholder="ghp_..."
                 value={githubToken}
                 onChange={(e) => setGithubToken(e.target.value)}
-                className="w-full px-4 py-3 border border-neutral-300 rounded-md font-mono text-sm bg-white focus:border-saint focus:outline-none transition"
+                className="lt-input font-mono"
               />
               <p className="mt-2 text-xs text-neutral-500">
-                Use PAT com escopo <code className="font-mono">repo</code> e expiração de
+                Use PAT com escopo <code className="font-mono text-neutral-300">repo</code> e expiração de
                 24h. Após o scan, revogue.
               </p>
             </div>
@@ -212,7 +215,7 @@ export function InspectForm({
         {/* Erro global */}
         {globalError && (
           <div
-            className="bg-sinner-bg border border-sinner/20 text-sinner text-sm rounded-md px-4 py-3"
+            className="lt-alert-danger"
             role="alert"
             aria-live="polite"
           >
@@ -225,16 +228,16 @@ export function InspectForm({
           <button
             type="submit"
             disabled={submitting}
-            className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md bg-ink text-white font-semibold hover:bg-neutral-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full lt-btn-primary"
           >
             <span>{submitting ? "Enviando..." : "Analisar arquitetura"}</span>
             <span aria-hidden="true">→</span>
           </button>
           <p className="mt-4 text-xs text-neutral-500 leading-relaxed">
             Clonamos shallow no backend, rodamos o mesmo motor do CLI, devolvemos o PDF.{" "}
-            <strong>Clone descartado em até 60 segundos.</strong> PDF e JSON ficam 24h e
+            <strong className="text-neutral-300">Clone descartado em até 60 segundos.</strong> PDF e JSON ficam 24h e
             expiram. Código fonte não persiste.{" "}
-            <Link href="/privacidade" className="underline">
+            <Link href="/privacidade" className="underline decoration-emerald-400/50 underline-offset-2 text-emerald-200 hover:text-emerald-100">
               Política de privacidade
             </Link>
             .
@@ -242,11 +245,11 @@ export function InspectForm({
         </div>
       </form>
 
-      <p className="mt-6 text-sm text-neutral-600 text-center">
+      <p className="mt-6 text-sm text-neutral-400 text-center">
         Para uso recorrente ou repo privado,{" "}
         <Link
           href="/cli"
-          className="font-semibold underline decoration-neutral-400 underline-offset-2 hover:text-ink hover:decoration-ink"
+          className="font-semibold underline decoration-emerald-400/50 underline-offset-2 text-emerald-200 hover:text-emerald-100"
         >
           baixe o CLI →
         </Link>

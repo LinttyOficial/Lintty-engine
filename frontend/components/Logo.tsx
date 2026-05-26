@@ -3,6 +3,11 @@ import Image from "next/image";
 
 interface LogoProps {
   size?: "sm" | "md";
+  /**
+   * Mantido por compatibilidade — o site agora é 100% dark, então o logo
+   * é sempre renderizado em paper. A prop é ignorada.
+   */
+  invert?: boolean;
 }
 
 /**
@@ -15,7 +20,7 @@ export function Logo({ size = "md" }: LogoProps) {
   return (
     <Link
       href="/"
-      className="flex items-center gap-2 font-semibold tracking-tight text-ink"
+      className="flex items-center gap-2 font-semibold tracking-tight transition-colors duration-300 text-paper"
       style={{ fontSize: size === "md" ? "1.125rem" : "1rem" }}
     >
       <Image

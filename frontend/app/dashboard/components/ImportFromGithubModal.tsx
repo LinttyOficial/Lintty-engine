@@ -444,18 +444,18 @@ export function ImportFromGithubModal({
           <div className="min-w-0">
             <h2
               id={titleId}
-              className="text-lg font-bold tracking-tight text-ink"
+              className="text-lg font-bold tracking-tight text-paper"
             >
               Importar do GitHub
             </h2>
             {step === "pick-repo" && selectedOrg && (
-              <p className="mt-1 text-sm text-neutral-600 truncate">
+              <p className="mt-1 text-sm text-neutral-400 truncate">
                 Repositórios de{" "}
-                <strong className="text-ink">{selectedOrg.login}</strong>
+                <strong className="text-paper">{selectedOrg.login}</strong>
               </p>
             )}
             {step === "pick-org" && (
-              <p className="mt-1 text-sm text-neutral-600">
+              <p className="mt-1 text-sm text-neutral-400">
                 Escolha uma organização para listar seus repositórios.
               </p>
             )}
@@ -464,7 +464,7 @@ export function ImportFromGithubModal({
             ref={closeBtnRef}
             type="button"
             onClick={handleClose}
-            className="text-neutral-500 hover:text-ink transition -mt-1 -mr-1 p-1 shrink-0"
+            className="text-neutral-400 hover:text-paper transition -mt-1 -mr-1 p-1 shrink-0"
             aria-label="Fechar"
           >
             <svg
@@ -522,13 +522,13 @@ export function ImportFromGithubModal({
         </div>
 
         {/* Footer: ações contextuais. */}
-        <div className="mt-5 pt-4 border-t border-neutral-200 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="mt-5 pt-4 border-t border-neutral-800/60 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="text-xs text-neutral-500">
             {step === "pick-repo" && (
               <button
                 type="button"
                 onClick={handleBackToOrgs}
-                className="inline-flex items-center gap-1 text-neutral-700 hover:text-ink transition"
+                className="inline-flex items-center gap-1 text-neutral-300 hover:text-paper transition"
               >
                 <svg
                   width="14"
@@ -555,7 +555,7 @@ export function ImportFromGithubModal({
                 type="button"
                 onClick={handleBulkImport}
                 disabled={bulk.active || selected.size === 0}
-                className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition disabled:opacity-60 disabled:cursor-not-allowed"
+                className="lt-btn-primary text-sm px-5 py-2 disabled:opacity-60"
               >
                 {bulk.active
                   ? `Importando ${bulk.done}/${bulk.total}…`
@@ -566,7 +566,7 @@ export function ImportFromGithubModal({
               type="button"
               onClick={handleClose}
               disabled={bulk.active}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition disabled:opacity-60 disabled:cursor-not-allowed"
+              className="lt-btn-secondary text-sm px-5 py-2 disabled:opacity-60"
             >
               Concluído
             </button>
@@ -581,18 +581,18 @@ export function ImportFromGithubModal({
 
 function NeedsConnectStep({ onConnect }: { onConnect: () => void }) {
   return (
-    <div className="bg-neutral-50 border border-neutral-200 rounded-lg p-6 text-center">
-      <p className="text-base font-semibold text-ink">
+    <div className="lt-card-soft bg-neutral-900/40 rounded-lg p-6 text-center">
+      <p className="text-base font-semibold text-paper">
         Conecte seu GitHub primeiro
       </p>
-      <p className="mt-2 text-sm text-neutral-600 max-w-md mx-auto">
+      <p className="mt-2 text-sm text-neutral-400 max-w-md mx-auto">
         Para listar suas organizações e importar repositórios — incluindo
         os privados — precisamos de uma autorização OAuth com escopos{" "}
-        <code className="font-mono text-xs bg-white border border-neutral-200 rounded px-1 py-0.5">
+        <code className="font-mono text-xs bg-white/5 border border-neutral-800/60 text-paper rounded px-1 py-0.5">
           repo
         </code>{" "}
         e{" "}
-        <code className="font-mono text-xs bg-white border border-neutral-200 rounded px-1 py-0.5">
+        <code className="font-mono text-xs bg-white/5 border border-neutral-800/60 text-paper rounded px-1 py-0.5">
           read:org
         </code>
         . Você pode revogar a qualquer momento pelo dashboard ou direto
@@ -601,7 +601,7 @@ function NeedsConnectStep({ onConnect }: { onConnect: () => void }) {
       <button
         type="button"
         onClick={onConnect}
-        className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+        className="mt-5 lt-btn-primary text-sm px-5 py-2.5"
       >
         <svg
           width="14"
@@ -637,13 +637,13 @@ function PickOrgStep({
   }
   if (state.orgs.length === 0) {
     return (
-      <div className="bg-white border border-dashed border-neutral-300 rounded-lg p-8 text-center">
-        <p className="text-base font-semibold text-ink">
+      <div className="bg-white/[0.02] border border-dashed border-neutral-700/60 rounded-lg p-8 text-center">
+        <p className="text-base font-semibold text-paper">
           Nenhuma organização
         </p>
-        <p className="mt-2 text-sm text-neutral-600 max-w-md mx-auto">
+        <p className="mt-2 text-sm text-neutral-400 max-w-md mx-auto">
           Você não pertence a nenhuma organização no GitHub. Use{" "}
-          <strong>Adicionar repositório</strong> para colar a URL de um
+          <strong className="text-paper">Adicionar repositório</strong> para colar a URL de um
           repo público.
         </p>
       </div>
@@ -659,11 +659,11 @@ function PickOrgStep({
           <button
             type="button"
             onClick={() => onPick(org)}
-            className="w-full flex items-center gap-3 p-3 rounded-lg border border-neutral-200 bg-white hover:border-saint/40 hover:bg-saint-bg/40 transition text-left"
+            className="w-full flex items-center gap-3 p-3 rounded-lg border border-neutral-800/60 bg-neutral-900/40 hover:border-emerald-500/40 hover:bg-emerald-500/5 transition text-left"
           >
             <OrgAvatar org={org} />
             <span className="flex-1 min-w-0">
-              <span className="block font-semibold text-ink truncate">
+              <span className="block font-semibold text-paper truncate">
                 {org.login}
               </span>
             </span>
@@ -673,7 +673,7 @@ function PickOrgStep({
               viewBox="0 0 20 20"
               fill="none"
               aria-hidden="true"
-              className="text-neutral-400 shrink-0"
+              className="text-neutral-500 shrink-0"
             >
               <path
                 d="M8 5l5 5-5 5"
@@ -761,12 +761,12 @@ function PickRepoStep({
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Buscar por nome…"
-          className="w-full px-4 py-2 border border-neutral-300 rounded-md text-sm bg-white focus:border-saint focus:outline-none transition"
+          className="lt-input"
         />
       </div>
       {state.repos.length > 0 && (
         <div className="mb-3 flex items-center justify-between gap-3 text-sm">
-          <span className="text-neutral-600">
+          <span className="text-neutral-400">
             {selected.size === 0
               ? `${visibleSelectable.length} disponíve${visibleSelectable.length === 1 ? "l" : "is"} para importar`
               : `${selected.size} selecionado${selected.size === 1 ? "" : "s"}`}
@@ -777,7 +777,7 @@ function PickRepoStep({
                 type="button"
                 onClick={onClearSelection}
                 disabled={bulkActive}
-                className="text-neutral-700 hover:text-ink underline underline-offset-2 disabled:opacity-50"
+                className="text-neutral-300 hover:text-paper underline underline-offset-2 disabled:opacity-50"
               >
                 Limpar seleção
               </button>
@@ -787,7 +787,7 @@ function PickRepoStep({
                 type="button"
                 onClick={allVisibleSelected ? onClearSelection : onSelectAllVisible}
                 disabled={bulkActive}
-                className="text-neutral-700 hover:text-ink underline underline-offset-2 disabled:opacity-50"
+                className="text-neutral-300 hover:text-paper underline underline-offset-2 disabled:opacity-50"
               >
                 {allVisibleSelected ? "Desmarcar todos" : "Selecionar todos"}
               </button>
@@ -796,19 +796,19 @@ function PickRepoStep({
         </div>
       )}
       {state.repos.length === 0 ? (
-        <div className="bg-white border border-dashed border-neutral-300 rounded-lg p-8 text-center">
-          <p className="text-base font-semibold text-ink">
+        <div className="bg-white/[0.02] border border-dashed border-neutral-700/60 rounded-lg p-8 text-center">
+          <p className="text-base font-semibold text-paper">
             Nenhum repositório
           </p>
-          <p className="mt-2 text-sm text-neutral-600">
+          <p className="mt-2 text-sm text-neutral-400">
             Esta organização não tem repositórios visíveis para a sua
             conta.
           </p>
         </div>
       ) : filteredRepos.length === 0 ? (
-        <div className="text-center text-sm text-neutral-600 py-8">
+        <div className="text-center text-sm text-neutral-400 py-8">
           Nenhum repositório bate com{" "}
-          <strong className="text-ink">{search}</strong>.
+          <strong className="text-paper">{search}</strong>.
         </div>
       ) : (
         <ul className="space-y-2" aria-label="Repositórios da organização">
@@ -854,7 +854,7 @@ function RepoRow({
 
   return (
     <article
-      className={`bg-white border rounded-lg transition ${isSelected ? "border-saint/60 ring-1 ring-saint/20" : "border-neutral-200"}`}
+      className={`bg-neutral-900/40 border rounded-lg transition ${isSelected ? "border-emerald-500/60 ring-1 ring-emerald-500/20" : "border-neutral-800/60"}`}
     >
       <div className="flex items-center gap-3 p-3">
         {!isDone && (
@@ -864,17 +864,17 @@ function RepoRow({
             onChange={onToggleSelect}
             disabled={bulkActive || isPending}
             aria-label={`Selecionar ${repo.fullName}`}
-            className="w-4 h-4 accent-saint cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            className="w-4 h-4 accent-emerald-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
           />
         )}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-semibold text-ink truncate">
+            <p className="font-semibold text-paper truncate">
               {repo.fullName}
             </p>
             {repo.private && (
               <span
-                className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-700 bg-neutral-100 border border-neutral-200 rounded px-1.5 py-0.5"
+                className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-300 bg-white/5 border border-neutral-700/60 rounded px-1.5 py-0.5"
                 title="Repositório privado"
               >
                 privado
@@ -886,7 +886,7 @@ function RepoRow({
           </div>
         </div>
         {isDone ? (
-          <span className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md bg-saint-bg border border-saint/20 text-saint text-sm font-semibold shrink-0">
+          <span className="inline-flex items-center gap-1.5 px-3 h-9 rounded-md bg-emerald-500/10 border border-emerald-400/30 text-emerald-200 text-sm font-semibold shrink-0">
             <svg
               width="14"
               height="14"
@@ -909,7 +909,7 @@ function RepoRow({
             type="button"
             onClick={onImport}
             disabled={isPending || bulkActive}
-            className="inline-flex items-center justify-center gap-2 px-4 h-9 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+            className="lt-btn-secondary text-sm px-4 h-9 disabled:opacity-50 shrink-0"
           >
             {isPending ? "Importando…" : "Importar só este"}
           </button>
@@ -917,7 +917,7 @@ function RepoRow({
       </div>
       {errorMessage && (
         <p
-          className="px-3 pb-3 -mt-1 text-sm text-sinner"
+          className="px-3 pb-3 -mt-1 text-sm text-red-300"
           role="alert"
           aria-live="polite"
         >
@@ -940,7 +940,7 @@ function OrgAvatar({ org }: { org: GitHubOrgSummary }) {
         alt=""
         width={32}
         height={32}
-        className="rounded-md border border-neutral-200 shrink-0"
+        className="rounded-md border border-neutral-800/60 shrink-0"
       />
     );
   }
@@ -965,7 +965,7 @@ function ListSkeleton({ rows }: { rows: number }) {
       {Array.from({ length: rows }, (_, i) => (
         <li
           key={i}
-          className="bg-white border border-neutral-200 rounded-lg p-3"
+          className="bg-neutral-900/40 border border-neutral-800/60 rounded-lg p-3"
         >
           <div className="lt-skeleton h-4 w-1/2 mb-2" />
           <div className="lt-skeleton h-3 w-1/3" />
@@ -986,19 +986,20 @@ function ErrorBlock({
 }) {
   return (
     <div
-      className="bg-sinner-bg border border-sinner/20 rounded-lg p-5"
+      className="lt-card-form p-5"
+      style={{ borderColor: "rgba(220, 38, 38, 0.35)" }}
       role="alert"
       aria-live="polite"
     >
-      <p className="text-sinner font-semibold">Não foi possível carregar</p>
-      <p className="mt-2 text-sm text-neutral-700">
+      <p className="text-red-300 font-semibold">Não foi possível carregar</p>
+      <p className="mt-2 text-sm text-neutral-300">
         {message ?? "Erro desconhecido."}
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"
           onClick={onRetry}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+          className="lt-btn-primary text-sm px-4 py-2"
         >
           Tentar novamente
         </button>
@@ -1006,7 +1007,7 @@ function ErrorBlock({
           <button
             type="button"
             onClick={secondary.onClick}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition"
+            className="lt-btn-secondary text-sm px-4 py-2"
           >
             {secondary.label}
           </button>

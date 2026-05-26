@@ -14,11 +14,11 @@ export function Footer({ variant = "default" }: FooterProps) {
     variant === "narrow" ? "max-w-4xl" : "max-w-6xl";
 
   return (
-    <footer className="border-t border-neutral-200 bg-white mt-12">
+    <footer className="lt-noise bg-ink text-paper">
       <div
         className={`${maxWidthClass} mx-auto px-6 py-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6`}
       >
-        <div className="flex items-center gap-2 text-sm text-neutral-600">
+        <div className="flex items-center gap-2 text-sm text-neutral-400">
           <Image
             src="/assets/lintty-icon.png"
             alt="Lintty"
@@ -27,14 +27,14 @@ export function Footer({ variant = "default" }: FooterProps) {
             className="w-6 h-6 object-contain"
             suppressHydrationWarning
           />
-          <span className="font-semibold text-ink">Lintty</span>
+          <span className="font-semibold text-paper">Lintty</span>
           <span className="ml-3">© 2026. Todos os direitos reservados.</span>
         </div>
-        <nav className="flex items-center gap-6 text-sm text-neutral-700">
-          <Link href="/privacidade" className="hover:text-ink">
+        <nav className="flex items-center gap-6 text-sm text-neutral-400">
+          <Link href="/privacidade" className="hover:text-paper transition">
             Privacidade
           </Link>
-          <a href="mailto:contato@lintty.com" className="hover:text-ink">
+          <a href="mailto:contato@lintty.com" className="hover:text-paper transition">
             contato@lintty.com
           </a>
         </nav>

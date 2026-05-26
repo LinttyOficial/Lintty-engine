@@ -83,23 +83,23 @@ function isTerminal(status: ScanStatus): boolean {
 const STATUS_META: Record<ScanStatus, { label: string; cls: string }> = {
   queued: {
     label: "na fila",
-    cls: "text-neutral-700 bg-neutral-100 border-neutral-200",
+    cls: "text-neutral-300 bg-white/5 border-neutral-700/60",
   },
   running: {
     label: "rodando",
-    cls: "text-blue-800 bg-blue-50 border-blue-200",
+    cls: "text-sky-300 bg-sky-500/10 border-sky-400/30",
   },
   completed: {
     label: "ok",
-    cls: "text-saint bg-saint-bg border-saint/30",
+    cls: "text-emerald-200 bg-emerald-500/10 border-emerald-400/30",
   },
   failed: {
     label: "erro",
-    cls: "text-sinner bg-sinner-bg border-sinner/30",
+    cls: "text-red-300 bg-red-500/10 border-red-400/30",
   },
   cancelled: {
     label: "cancelado",
-    cls: "text-neutral-600 bg-neutral-50 border-neutral-200",
+    cls: "text-neutral-400 bg-white/[0.03] border-neutral-700/60",
   },
 };
 
@@ -142,7 +142,7 @@ export default function ScanDetailPage() {
     <>
       <SkipLink />
       <Header />
-      <main id="main" className="px-6 py-12 md:py-16">
+      <main id="main" className="lt-dark-glow lt-noise px-6 py-12 md:py-16 text-paper">
         {authLoading && <PageSkeleton />}
         {!authLoading && networkError && <NetworkErrorState />}
         {!authLoading && !networkError && isAuthenticated && (
@@ -345,25 +345,25 @@ function ScanHeader({ scan, polling }: { scan: ScanDetail; polling: boolean }) {
       <p className="text-xs uppercase tracking-wider text-neutral-500">
         <Link
           href="/dashboard/repos/"
-          className="hover:text-neutral-700 transition"
+          className="hover:text-neutral-300 transition"
         >
           Repositórios
         </Link>{" "}
         <span aria-hidden="true">›</span>{" "}
         <Link
           href={repoHref}
-          className="font-mono normal-case tracking-normal text-neutral-700 hover:text-ink transition"
+          className="font-mono normal-case tracking-normal text-neutral-300 hover:text-paper transition"
         >
           {repoLabel}
         </Link>{" "}
         <span aria-hidden="true">›</span>{" "}
-        <span className="font-mono normal-case tracking-normal text-neutral-700">
+        <span className="font-mono normal-case tracking-normal text-neutral-300">
           Scan {shortId}
         </span>
       </p>
 
       <div className="mt-2 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-ink">
+        <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-paper">
           Scan{" "}
           <span className="font-mono">{shortId}</span>
         </h1>
@@ -393,7 +393,7 @@ function ScanHeader({ scan, polling }: { scan: ScanDetail; polling: boolean }) {
           href={scan.repo.githubUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="font-mono hover:text-ink underline decoration-neutral-300 underline-offset-2"
+          className="font-mono hover:text-paper underline decoration-emerald-400/40 underline-offset-2"
         >
           {repoLabel}
         </a>
@@ -429,18 +429,18 @@ function QueuedCard() {
   return (
     <section
       aria-labelledby="status-title"
-      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+      className="lt-card-form p-6 md:p-8"
     >
       <div className="flex items-start gap-3">
         <Spinner />
         <div>
           <h2
             id="status-title"
-            className="text-lg font-semibold tracking-tight text-ink"
+            className="text-lg font-semibold tracking-tight text-paper"
           >
             Aguardando worker...
           </h2>
-          <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+          <p className="mt-2 text-sm text-neutral-300 leading-relaxed">
             Seu scan está na fila. Normalmente sai em segundos. Esta página
             atualiza sozinha.
           </p>
@@ -454,18 +454,18 @@ function RunningCard() {
   return (
     <section
       aria-labelledby="status-title"
-      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+      className="lt-card-form p-6 md:p-8"
     >
       <div className="flex items-start gap-3">
         <Spinner />
         <div>
           <h2
             id="status-title"
-            className="text-lg font-semibold tracking-tight text-ink"
+            className="text-lg font-semibold tracking-tight text-paper"
           >
             Analisando o repositório...
           </h2>
-          <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+          <p className="mt-2 text-sm text-neutral-300 leading-relaxed">
             Cloning, restore, análise Roslyn e renderização do PDF rodam
             aqui no servidor. Não há estágio granular exposto para o
             dashboard — o status volta para <strong>concluído</strong> ou{" "}
@@ -490,15 +490,16 @@ function CompletedCard({ scan }: { scan: ScanDetail }) {
   return (
     <section
       aria-labelledby="status-title"
-      className="bg-saint-bg border border-saint/20 rounded-xl p-6 md:p-8"
+      className="lt-card-form p-6 md:p-8"
+      style={{ borderColor: "rgba(16, 185, 129, 0.35)" }}
     >
       <h2
         id="status-title"
-        className="text-lg font-semibold tracking-tight text-saint"
+        className="text-lg font-semibold tracking-tight text-emerald-200"
       >
         Análise concluída.
       </h2>
-      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+      <p className="mt-2 text-sm text-neutral-300 leading-relaxed">
         O laudo está pronto.{" "}
         {completedAt && (
           <>
@@ -528,10 +529,10 @@ function CompletedCard({ scan }: { scan: ScanDetail }) {
 
       {scan.hashContent && (
         <p
-          className="mt-4 text-xs text-neutral-600 break-all"
+          className="mt-4 text-xs text-neutral-400 break-all"
           title="Hash do report.json. O PDF gerado pela CLI local com o mesmo commit produz o mesmo hash."
         >
-          <span className="font-mono">{scan.hashContent}</span>
+          <span className="font-mono text-emerald-300/80">{scan.hashContent}</span>
         </p>
       )}
 
@@ -539,7 +540,7 @@ function CompletedCard({ scan }: { scan: ScanDetail }) {
         <a
           href={laudoPdfUrl(scan.publicId)}
           download={`laudo-${scan.publicId.slice(0, 8)}.pdf`}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition"
+          className="lt-btn-primary text-sm px-5 py-2.5"
         >
           <DownloadIcon />
           Baixar laudo PDF
@@ -547,17 +548,17 @@ function CompletedCard({ scan }: { scan: ScanDetail }) {
         <a
           href={reportJsonUrl(scan.publicId)}
           download={`report-${scan.publicId.slice(0, 8)}.json`}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md border border-neutral-300 bg-white text-neutral-800 text-sm font-medium hover:bg-neutral-50 transition"
+          className="lt-btn-secondary text-sm px-5 py-2.5"
         >
           <DownloadIcon />
           Baixar report.json
         </a>
       </div>
 
-      <div className="mt-6 pt-4 border-t border-saint/20">
+      <div className="mt-6 pt-4 border-t border-emerald-400/20">
         <Link
           href={repoHref}
-          className="inline-flex items-center gap-1.5 text-sm text-neutral-700 hover:text-ink transition"
+          className="inline-flex items-center gap-1.5 text-sm text-neutral-300 hover:text-paper transition"
         >
           <svg
             width="14"
@@ -648,15 +649,16 @@ function FailedCard({ scan }: { scan: ScanDetail }) {
   return (
     <section
       aria-labelledby="status-title"
-      className="bg-sinner-bg border border-sinner/20 rounded-xl p-6 md:p-8"
+      className="lt-card-form p-6 md:p-8"
+      style={{ borderColor: "rgba(220, 38, 38, 0.35)" }}
     >
       <h2
         id="status-title"
-        className="text-lg font-semibold tracking-tight text-sinner"
+        className="text-lg font-semibold tracking-tight text-red-300"
       >
         {mapped.title}
       </h2>
-      <p className="mt-2 text-sm text-neutral-800 leading-relaxed whitespace-pre-line">
+      <p className="mt-2 text-sm text-neutral-300 leading-relaxed whitespace-pre-line">
         {mapped.body}
       </p>
 
@@ -664,20 +666,20 @@ function FailedCard({ scan }: { scan: ScanDetail }) {
         {mapped.cta?.kind === "github_connect" ? (
           <a
             href={gitHubConnectStartUrl()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+            className="lt-btn-primary text-sm px-4 py-2"
           >
             Conectar GitHub
           </a>
         ) : null}
         <Link
           href={repoHref}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+          className="lt-btn-primary text-sm px-4 py-2"
         >
           Tentar novamente
         </Link>
         <Link
           href="/dashboard/"
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 bg-white text-neutral-800 text-sm font-medium hover:bg-neutral-50 transition"
+          className="lt-btn-secondary text-sm px-4 py-2"
         >
           Voltar ao dashboard
         </Link>
@@ -693,22 +695,22 @@ function CancelledCard({ scan }: { scan: ScanDetail }) {
   return (
     <section
       aria-labelledby="status-title"
-      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+      className="lt-card-form p-6 md:p-8"
     >
       <h2
         id="status-title"
-        className="text-lg font-semibold tracking-tight text-ink"
+        className="text-lg font-semibold tracking-tight text-paper"
       >
         Análise cancelada.
       </h2>
-      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+      <p className="mt-2 text-sm text-neutral-300 leading-relaxed">
         Este scan foi cancelado antes de terminar. Você pode disparar um
         novo a qualquer momento na página do repositório.
       </p>
       <div className="mt-6">
         <Link
           href={repoHref}
-          className="inline-flex items-center gap-1.5 text-sm text-neutral-700 hover:text-ink transition"
+          className="inline-flex items-center gap-1.5 text-sm text-neutral-300 hover:text-paper transition"
         >
           <svg
             width="14"
@@ -751,13 +753,13 @@ function PollingIndicator() {
 function PollTimedOutBanner() {
   return (
     <div
-      className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+      className="lt-alert-warning"
       role="status"
     >
-      <p className="font-medium">
+      <p className="font-medium text-amber-300">
         A análise demorou mais que o esperado.
       </p>
-      <p className="mt-1 text-amber-800/90">
+      <p className="mt-1">
         Paramos de atualizar automaticamente para não consumir conexão à
         toa. Recarregue a página para verificar o status mais recente.
       </p>
@@ -773,7 +775,7 @@ function Spinner() {
       aria-label="Carregando"
     >
       <svg
-        className="animate-spin h-5 w-5 text-saint"
+        className="animate-spin h-5 w-5 text-emerald-400"
         viewBox="0 0 24 24"
         fill="none"
         aria-hidden="true"
@@ -833,12 +835,12 @@ function PageSkeleton() {
   return (
     <section className="max-w-3xl mx-auto space-y-6">
       <div className="lt-skeleton h-4 w-48" />
-      <div className="bg-white border border-neutral-200 rounded-xl p-8 shadow-sm">
+      <div className="lt-card-form p-8">
         <div className="lt-skeleton h-7 w-1/2 mb-4" />
         <div className="lt-skeleton h-4 w-2/3 mb-2" />
         <div className="lt-skeleton h-4 w-1/3" />
       </div>
-      <div className="bg-white border border-neutral-200 rounded-xl p-6 shadow-sm">
+      <div className="lt-card-form p-6">
         <div className="lt-skeleton h-5 w-40 mb-4" />
         <div className="lt-skeleton h-4 w-full mb-2" />
         <div className="lt-skeleton h-9 w-32 mt-4" />
@@ -850,24 +852,24 @@ function PageSkeleton() {
 function NetworkErrorState() {
   return (
     <section className="max-w-3xl mx-auto">
-      <div className="bg-sinner-bg border border-sinner/20 rounded-xl p-6 md:p-8">
-        <h1 className="text-2xl font-bold tracking-tight text-sinner">
+      <div className="lt-card-form p-6 md:p-8" style={{ borderColor: "rgba(220, 38, 38, 0.35)" }}>
+        <h1 className="text-2xl font-bold tracking-tight text-red-300">
           Backend indisponível
         </h1>
-        <p className="mt-3 text-neutral-700 text-sm">
+        <p className="mt-3 text-neutral-300 text-sm">
           Não conseguimos contatar o servidor para verificar sua sessão.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+            className="lt-btn-primary text-sm px-4 py-2"
           >
             Tentar novamente
           </button>
           <Link
             href="/dashboard/"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition"
+            className="lt-btn-secondary text-sm px-4 py-2"
           >
             Voltar ao dashboard
           </Link>
@@ -880,17 +882,17 @@ function NetworkErrorState() {
 function NotFoundState() {
   return (
     <section className="max-w-3xl mx-auto">
-      <div className="bg-white border border-neutral-200 rounded-xl p-8 md:p-10 text-center">
-        <h1 className="text-xl font-bold tracking-tight text-ink">
+      <div className="lt-card-form p-8 md:p-10 text-center">
+        <h1 className="text-xl font-bold tracking-tight text-paper">
           Scan não encontrado
         </h1>
-        <p className="mt-3 text-sm text-neutral-700 max-w-md mx-auto">
+        <p className="mt-3 text-sm text-neutral-300 max-w-md mx-auto">
           Este scan não existe ou já foi removido. Volte ao dashboard
           para ver os repositórios e seus scans recentes.
         </p>
         <Link
           href="/dashboard/"
-          className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+          className="mt-6 lt-btn-primary text-sm px-4 py-2"
         >
           Voltar ao dashboard
         </Link>
@@ -903,25 +905,26 @@ function LoadErrorState({ message }: { message: string }) {
   return (
     <section className="max-w-3xl mx-auto">
       <div
-        className="bg-sinner-bg border border-sinner/20 rounded-xl p-6"
+        className="lt-card-form p-6"
+        style={{ borderColor: "rgba(220, 38, 38, 0.35)" }}
         role="alert"
         aria-live="polite"
       >
-        <p className="text-sinner font-semibold">
+        <p className="text-red-300 font-semibold">
           Não foi possível carregar este scan
         </p>
-        <p className="mt-2 text-sm text-neutral-700">{message}</p>
+        <p className="mt-2 text-sm text-neutral-300">{message}</p>
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+            className="lt-btn-primary text-sm px-4 py-2"
           >
             Tentar novamente
           </button>
           <Link
             href="/dashboard/"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition"
+            className="lt-btn-secondary text-sm px-4 py-2"
           >
             Voltar ao dashboard
           </Link>

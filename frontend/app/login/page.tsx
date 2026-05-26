@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SkipLink } from "@/components/SkipLink";
+import { AuroraPageHeader } from "@/components/HeroAurora";
 import { backendUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -115,26 +116,22 @@ export default function LoginPage() {
     <>
       <SkipLink />
       <Header />
-      <main id="main" className="px-6 py-12 md:py-16">
+      <AuroraPageHeader
+        maxWidthClass="max-w-md"
+        eyebrow="Lintty Dashboard"
+        title="Entrar na sua conta."
+        subtitle="Acesse seu workspace e os laudos da sua equipe."
+      />
+      <main id="main" className="lt-dark-glow lt-noise px-6 py-12 md:py-16 text-paper">
         <div className="max-w-md mx-auto">
-          <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-3">
-            Lintty Dashboard
-          </p>
-          <h1 className="text-3xl md:text-4xl font-bold leading-tight tracking-tight">
-            Entrar na sua conta.
-          </h1>
-          <p className="mt-3 text-neutral-700">
-            Acesse seu workspace e os laudos da sua equipe.
-          </p>
-
           <form
             noValidate
             onSubmit={handleSubmit}
-            className="mt-8 bg-white border border-neutral-200 rounded-xl p-6 md:p-8 shadow-sm space-y-5"
+            className="mt-8 lt-card-form p-6 md:p-8 space-y-5"
           >
             <div>
-              <label htmlFor="email" className="block text-sm font-semibold mb-2">
-                Email <span className="text-sinner" aria-hidden="true">*</span>
+              <label htmlFor="email" className="block text-sm font-semibold mb-2 text-paper">
+                Email <span className="text-red-300" aria-hidden="true">*</span>
               </label>
               <input
                 id="email"
@@ -149,7 +146,7 @@ export default function LoginPage() {
                   setFieldErrors((prev) => ({ ...prev, email: undefined }));
                 }}
                 aria-invalid={fieldErrors.email ? "true" : undefined}
-                className="w-full px-4 py-3 border border-neutral-300 rounded-md text-sm bg-white focus:border-saint focus:outline-none transition"
+                className="lt-input"
               />
               {fieldErrors.email && (
                 <p className="field-error" role="alert" aria-live="polite">
@@ -160,14 +157,14 @@ export default function LoginPage() {
 
             <div>
               <div className="flex items-center justify-between mb-2">
-                <label htmlFor="password" className="block text-sm font-semibold">
-                  Senha <span className="text-sinner" aria-hidden="true">*</span>
+                <label htmlFor="password" className="block text-sm font-semibold text-paper">
+                  Senha <span className="text-red-300" aria-hidden="true">*</span>
                 </label>
                 <button
                   ref={forgotLinkRef}
                   type="button"
                   onClick={() => setShowForgot(true)}
-                  className="text-xs text-neutral-600 hover:text-ink underline decoration-neutral-300 underline-offset-2"
+                  className="text-xs text-neutral-400 hover:text-paper underline decoration-neutral-600 underline-offset-2"
                 >
                   Esqueceu a senha?
                 </button>
@@ -184,7 +181,7 @@ export default function LoginPage() {
                   setFieldErrors((prev) => ({ ...prev, password: undefined }));
                 }}
                 aria-invalid={fieldErrors.password ? "true" : undefined}
-                className="w-full px-4 py-3 border border-neutral-300 rounded-md text-sm bg-white focus:border-saint focus:outline-none transition"
+                className="lt-input"
               />
               {fieldErrors.password && (
                 <p className="field-error" role="alert" aria-live="polite">
@@ -195,7 +192,7 @@ export default function LoginPage() {
 
             {globalError && (
               <div
-                className="bg-sinner-bg border border-sinner/20 text-sinner text-sm rounded-md px-4 py-3"
+                className="lt-alert-danger"
                 role="alert"
                 aria-live="polite"
               >
@@ -206,7 +203,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md bg-ink text-white font-semibold hover:bg-neutral-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full lt-btn-primary"
             >
               <span>{submitting ? "Entrando..." : "Entrar"}</span>
               <span aria-hidden="true">→</span>
@@ -214,9 +211,9 @@ export default function LoginPage() {
           </form>
 
           <div className="my-6 flex items-center gap-4" aria-hidden="true">
-            <div className="flex-1 h-px bg-neutral-200" />
+            <div className="flex-1 h-px bg-neutral-800/60" />
             <span className="text-xs uppercase tracking-widest text-neutral-500">ou</span>
-            <div className="flex-1 h-px bg-neutral-200" />
+            <div className="flex-1 h-px bg-neutral-800/60" />
           </div>
 
           <button
@@ -224,7 +221,7 @@ export default function LoginPage() {
             onClick={() => {
               window.location.href = backendUrl("/api/auth/github/start");
             }}
-            className="w-full inline-flex items-center justify-center gap-3 px-6 py-3 rounded-md border border-neutral-300 bg-white text-neutral-800 font-medium hover:bg-neutral-100 transition"
+            className="w-full lt-btn-secondary gap-3"
           >
             <svg
               width="20"
@@ -238,11 +235,11 @@ export default function LoginPage() {
             Continuar com GitHub
           </button>
 
-          <p className="mt-6 text-center text-sm text-neutral-700">
+          <p className="mt-6 text-center text-sm text-neutral-400">
             Não tem conta?{" "}
             <Link
               href="/signup"
-              className="font-semibold underline decoration-neutral-400 underline-offset-2 hover:text-ink hover:decoration-ink"
+              className="font-semibold underline decoration-emerald-400/50 underline-offset-2 text-emerald-200 hover:text-emerald-100"
             >
               Criar conta
             </Link>
@@ -262,18 +259,18 @@ export default function LoginPage() {
         }}
       >
         <div className="lt-modal">
-          <h2 id="forgot-title" className="text-xl font-bold tracking-tight">
+          <h2 id="forgot-title" className="text-xl font-bold tracking-tight text-paper">
             Recuperação de senha em V1.1
           </h2>
-          <p id="forgot-desc" className="mt-3 text-sm text-neutral-700">
+          <p id="forgot-desc" className="mt-3 text-sm text-neutral-300">
             Estamos no Beta do dashboard. O fluxo automatizado de redefinição de senha entra
             em V1.1.
           </p>
-          <p className="mt-3 text-sm text-neutral-700">
+          <p className="mt-3 text-sm text-neutral-300">
             Por enquanto, mande um email para{" "}
             <a
               href="mailto:vinicius@landtech.com.br?subject=Reset%20de%20senha%20Lintty"
-              className="font-semibold underline decoration-neutral-400 underline-offset-2 hover:text-ink hover:decoration-ink"
+              className="font-semibold underline decoration-emerald-400/50 underline-offset-2 text-emerald-200 hover:text-emerald-100"
             >
               vinicius@landtech.com.br
             </a>{" "}
@@ -290,7 +287,7 @@ export default function LoginPage() {
                 setShowForgot(false);
                 forgotLinkRef.current?.focus();
               }}
-              className="px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+              className="lt-btn-primary text-sm"
             >
               Entendi
             </button>

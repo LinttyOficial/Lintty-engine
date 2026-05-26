@@ -18,7 +18,7 @@ public sealed class PostgresOptions
     /// <summary>
     /// Standard Npgsql connection string. Example for local dev (matches the
     /// docker-compose at <c>engine/docker-compose.yml</c>):
-    /// <c>Host=localhost;Port=5433;Database=lintty_dev;Username=lintty;Password=lintty_dev</c>.
+    /// <c>Host=localhost;Port=5434;Database=lintty_dev;Username=lintty;Password=lintty_dev</c>.
     /// </summary>
     public string ConnectionString { get; set; } = string.Empty;
 }

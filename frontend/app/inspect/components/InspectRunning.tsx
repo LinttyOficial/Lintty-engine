@@ -51,9 +51,9 @@ export function InspectRunning({
 
   return (
     <section className="mt-10" aria-labelledby="running-heading" aria-live="polite">
-      <div className="bg-white border border-neutral-200 rounded-xl p-6 md:p-8 shadow-sm">
+      <div className="lt-card-form p-6 md:p-8">
         <p className="text-xs font-mono text-neutral-500">job_id: {jobId}</p>
-        <h2 id="running-heading" className="mt-2 text-2xl font-bold tracking-tight">
+        <h2 id="running-heading" className="mt-2 text-2xl font-bold tracking-tight text-paper">
           <span>{stageLabel}</span>
         </h2>
 
@@ -65,27 +65,27 @@ export function InspectRunning({
               role="progressbar"
               aria-label="Análise em progresso"
             />
-            <p className="mt-3 text-sm text-neutral-600">
+            <p className="mt-3 text-sm text-neutral-300">
               Tempo decorrido:{" "}
               <span className="font-mono">
                 {mm}:{ss}
               </span>
-              <span className="text-neutral-400"> &middot; </span>
+              <span className="text-neutral-500"> &middot; </span>
               limite: 15 min
             </p>
           </div>
         </div>
 
-        <p className="mt-6 text-sm text-neutral-600">
+        <p className="mt-6 text-sm text-neutral-300">
           Pipeline determinístico em execução. Você pode fechar a aba — os artefatos ficam
           disponíveis por 24h via{" "}
-          <code className="font-mono text-xs">{pollPath}</code>.
+          <code className="font-mono text-xs text-neutral-200">{pollPath}</code>.
         </p>
 
         <button
           type="button"
           onClick={onCancel}
-          className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 text-sm text-neutral-700 hover:bg-neutral-100 transition"
+          className="mt-6 lt-btn-secondary text-sm"
         >
           Voltar ao formulário
         </button>

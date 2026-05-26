@@ -7,10 +7,11 @@
 #   docker compose -f engine/docker-compose.yml down -v       # stop + wipe volume
 #
 # The default appsettings.json connection string points at this exact instance:
-#   Host=localhost;Port=5433;Database=lintty_dev;Username=lintty;Password=lintty_dev
+#   Host=localhost;Port=5434;Database=lintty_dev;Username=lintty;Password=lintty_dev
 #
-# Host port 5433 (not 5432) avoids conflict with a native Postgres install on
-# Windows. Container internal port stays 5432 — only the host-side mapping moved.
+# Host port 5434 (not 5432/5433) avoids conflict with a native Postgres install
+# on Windows and with other dev Postgres containers (e.g. euforia-postgres on
+# 5433). Container internal port stays 5432 — only the host-side mapping moved.
 #
 # Tests use Testcontainers.PostgreSql to spin up an ephemeral instance per
 # test class, so they do NOT depend on this compose stack being up. This
@@ -28,7 +29,7 @@ services:
       # Faster fsync for dev only — never use this in prod.
       POSTGRES_INITDB_ARGS: "--data-checksums"
     ports:
-      - "5433:5432"
+      - "5434:5432"
     volumes:
       - lintty_pgdata:/var/lib/postgresql/data
     healthcheck:

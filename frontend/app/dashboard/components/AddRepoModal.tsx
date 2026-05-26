@@ -160,14 +160,14 @@ export function AddRepoModal({
         <div className="flex items-start justify-between gap-4">
           <h2
             id="add-repo-title"
-            className="text-lg font-bold tracking-tight text-ink"
+            className="text-lg font-bold tracking-tight text-paper"
           >
             Adicionar repositório
           </h2>
           <button
             type="button"
             onClick={handleClose}
-            className="text-neutral-500 hover:text-ink transition -mt-1 -mr-1 p-1"
+            className="text-neutral-400 hover:text-paper transition -mt-1 -mr-1 p-1"
             aria-label="Fechar"
           >
             <svg
@@ -186,7 +186,7 @@ export function AddRepoModal({
             </svg>
           </button>
         </div>
-        <p className="mt-2 text-sm text-neutral-600">
+        <p className="mt-2 text-sm text-neutral-400">
           Cole a URL do repositório no GitHub. Você poderá disparar scans
           depois pela tela do repositório.
         </p>
@@ -199,10 +199,10 @@ export function AddRepoModal({
           <div>
             <label
               htmlFor="add-repo-url"
-              className="block text-sm font-semibold mb-2"
+              className="block text-sm font-semibold mb-2 text-paper"
             >
               URL do GitHub{" "}
-              <span className="text-sinner" aria-hidden="true">
+              <span className="text-red-300" aria-hidden="true">
                 *
               </span>
             </label>
@@ -222,7 +222,7 @@ export function AddRepoModal({
               }}
               aria-invalid={urlError ? "true" : undefined}
               aria-describedby={urlError ? "add-repo-url-err" : undefined}
-              className="w-full px-4 py-3 border border-neutral-300 rounded-md font-mono text-sm bg-white focus:border-saint focus:outline-none transition"
+              className="lt-input font-mono"
             />
             {urlError && (
               <p
@@ -238,7 +238,7 @@ export function AddRepoModal({
 
           {submitError && (
             <div
-              className="bg-sinner-bg border border-sinner/20 text-sinner text-sm rounded-md px-4 py-3"
+              className="lt-alert-danger"
               role="alert"
               aria-live="polite"
             >
@@ -251,14 +251,14 @@ export function AddRepoModal({
               type="button"
               onClick={handleClose}
               disabled={submitting}
-              className="px-4 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition disabled:opacity-50"
+              className="lt-btn-secondary text-sm px-4 py-2 disabled:opacity-50"
             >
               Cancelar
             </button>
             <button
               type="submit"
               disabled={submitting}
-              className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="lt-btn-primary text-sm px-5 py-2"
             >
               {submitting ? "Adicionando..." : "Adicionar"}
             </button>

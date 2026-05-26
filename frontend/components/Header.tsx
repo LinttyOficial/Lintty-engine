@@ -1,24 +1,38 @@
 "use client";
 
 /**
- * The single header component used across every page. Renders one of two
- * variants based on the auth state:
+ * Floating pill header — wordmark sai, ícone fica num pill dark glass que
+ * flutua centralizado no topo. Inspirado no header da Forge / 21st.dev:
+ * gliph + nav inline + LogIn ghost + Signup em pill branco.
  *
- *   - Anonymous: marketing nav (Como funciona / Inspecionar / CLI / Preços)
- *     plus Entrar + Criar conta CTAs.
- *   - Authenticated: Dashboard / Inspecionar / CLI plus avatar dropdown
- *     with name, email, quick links and Logout.
+ * Duas variantes:
+ *   - Anonymous: nav marketing (Manifesto/Como funciona, Inspecionar, CLI,
+ *     Preços) + Entrar (ghost) + Criar conta (pill branco).
+ *   - Authenticated: nav dashboard (Dashboard, Inspecionar, CLI) + avatar
+ *     com dropdown (nome/email + atalhos + sair).
  *
- * `currentPath` is read from `usePathname()` to mark the active link with
- * `aria-current="page"` and emphasised text — same UX as the legacy
- * pages where each html file hand-coded its own active state.
+ * Comportamento de scroll: o pill ganha um glow emerald sutil quando o
+ * usuário já scrollou (substitui o antigo "frosted-dark fica visível").
+ * Como o pill já é sempre opaco, não precisamos mais do estado
+ * transparente sobre o hero — ele convive bem com a aurora.
  */
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { Logo } from "./Logo";
+import Image from "next/image";
 import { useAuth } from "@/lib/auth";
+
+function useScrolled(): boolean {
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return scrolled;
+}
 
 interface NavLinkProps {
   href: string;
@@ -30,14 +44,69 @@ function NavLink({ href, label, active }: NavLinkProps) {
   return (
     <Link
       href={href}
-      className={
-        active
-          ? "text-ink font-semibold"
-          : "text-neutral-700 hover:text-ink transition"
-      }
       aria-current={active ? "page" : undefined}
+      className={`relative px-3 py-1.5 rounded-full text-sm transition ${
+        active
+          ? "text-paper font-semibold"
+          : "text-neutral-300 hover:text-paper hover:bg-white/5"
+      }`}
     >
       {label}
+      {active && (
+        <span
+          aria-hidden="true"
+          className="absolute left-1/2 -translate-x-1/2 -bottom-0.5 w-1 h-1 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.75)]"
+        />
+      )}
+    </Link>
+  );
+}
+
+function PillShell({
+  children,
+  scrolled,
+}: {
+  children: React.ReactNode;
+  scrolled: boolean;
+}) {
+  return (
+    <header className="sticky top-0 z-30 px-4 pt-4 pb-2 pointer-events-none">
+      <div
+        className={`lt-pill pointer-events-auto mx-auto flex items-center gap-1.5 rounded-full backdrop-blur-xl pl-2 pr-1.5 py-1.5 w-fit max-w-full ${
+          scrolled ? "is-scrolled" : ""
+        }`}
+      >
+        {children}
+      </div>
+    </header>
+  );
+}
+
+function PillLogo() {
+  return (
+    <Link
+      href="/"
+      aria-label="Lintty — voltar à página inicial"
+      className="flex items-center gap-2 pl-1 pr-2.5 py-1 rounded-full hover:bg-white/5 transition shrink-0 group"
+    >
+      <Image
+        src="/assets/lintty-icon.png"
+        alt=""
+        width={22}
+        height={22}
+        className="w-[22px] h-[22px] object-contain"
+        priority
+        suppressHydrationWarning
+      />
+      <span className="text-paper font-semibold tracking-tight text-[15px] hidden sm:inline">
+        Lintty
+      </span>
+      <span
+        className="hidden md:inline-flex items-center text-[9px] font-mono font-semibold tracking-[0.12em] uppercase text-emerald-300/80 bg-emerald-500/10 border border-emerald-400/20 rounded px-1.5 py-0.5 leading-none"
+        aria-label="Versão zero, beta"
+      >
+        V0
+      </span>
     </Link>
   );
 }
@@ -56,16 +125,13 @@ export function Header() {
   const pathname = usePathname() ?? "/";
   const { isAuthenticated, isLoading, user, currentOrg, logout } = useAuth();
   const router = useRouter();
-
-  // We render the anon header during SSG and during the loading window —
-  // the auth/me round-trip happens in the browser, and flipping headers
-  // mid-render is jarring. The dashboard header (with avatar) only
-  // appears after we know the user is authenticated.
+  const scrolled = useScrolled();
 
   if (isAuthenticated && !isLoading && user) {
     return (
       <AuthenticatedHeader
         pathname={pathname}
+        scrolled={scrolled}
         userName={user.displayName || user.email || "Usuário"}
         userEmail={user.email}
         orgName={currentOrg?.name ?? "sem organização"}
@@ -77,62 +143,73 @@ export function Header() {
     );
   }
 
-  return <AnonymousHeader pathname={pathname} />;
+  return <AnonymousHeader pathname={pathname} scrolled={scrolled} />;
 }
 
-function AnonymousHeader({ pathname }: { pathname: string }) {
+function AnonymousHeader({
+  pathname,
+  scrolled,
+}: {
+  pathname: string;
+  scrolled: boolean;
+}) {
   const isActive = (path: string): boolean =>
     pathname === path || pathname.startsWith(`${path}/`);
 
   return (
-    <header className="border-b border-neutral-200 bg-white/80 backdrop-blur sticky top-0 z-30">
-      <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-        <Logo />
-        <nav className="hidden md:flex items-center gap-7 text-sm">
-          <Link href="/#como-funciona" className="text-neutral-700 hover:text-ink transition">
-            Como funciona
-          </Link>
-          <NavLink
-            href="/inspect"
-            label="Inspecionar repo"
-            active={isActive("/inspect")}
-          />
-          <NavLink
-            href="/cli"
-            label="Baixar CLI"
-            active={isActive("/cli")}
-          />
-          <NavLink
-            href="/pricing"
-            label="Preços"
-            active={isActive("/pricing")}
-          />
-          <NavLink
-            href="/login"
-            label="Entrar"
-            active={isActive("/login")}
-          />
-          <Link
-            href="/signup"
-            className="px-4 py-2 rounded-md bg-ink text-white hover:bg-neutral-800 transition"
-            aria-current={isActive("/signup") ? "page" : undefined}
-          >
-            Criar conta
-          </Link>
-        </nav>
+    <PillShell scrolled={scrolled}>
+      <PillLogo />
+
+      <span aria-hidden="true" className="hidden md:block h-5 w-px bg-neutral-800/80 mx-1" />
+
+      <nav className="hidden md:flex items-center gap-0.5 px-1">
+        <NavLink
+          href="/#como-funciona"
+          label="Como funciona"
+          active={false}
+        />
+        <NavLink
+          href="/inspect"
+          label="Inspecionar"
+          active={isActive("/inspect")}
+        />
+        <NavLink
+          href="/cli"
+          label="CLI"
+          active={isActive("/cli")}
+        />
+        <NavLink
+          href="/pricing"
+          label="Preços"
+          active={isActive("/pricing")}
+        />
+      </nav>
+
+      <span aria-hidden="true" className="hidden md:block h-5 w-px bg-neutral-800/80 mx-1" />
+
+      <div className="flex items-center gap-1.5">
+        <Link
+          href="/login"
+          aria-current={isActive("/login") ? "page" : undefined}
+          className="hidden sm:inline-flex items-center px-4 py-1.5 rounded-full text-sm font-medium text-neutral-300 hover:text-paper hover:bg-white/5 transition"
+        >
+          Entrar
+        </Link>
         <Link
           href="/signup"
-          className="md:hidden px-3 py-2 rounded-md bg-ink text-white text-sm"
+          aria-current={isActive("/signup") ? "page" : undefined}
+          className="inline-flex items-center px-4 py-1.5 rounded-full text-sm font-semibold bg-saint text-white hover:bg-emerald-600 transition shadow-[0_6px_20px_-6px_rgba(16,185,129,0.55)]"
         >
           Criar conta
         </Link>
       </div>
-    </header>
+    </PillShell>
   );
 }
 
 interface AuthenticatedHeaderProps {
   pathname: string;
+  scrolled: boolean;
   userName: string;
   userEmail: string;
   orgName: string;
@@ -141,6 +218,7 @@ interface AuthenticatedHeaderProps {
 
 function AuthenticatedHeader({
   pathname,
+  scrolled,
   userName,
   userEmail,
   orgName,
@@ -151,7 +229,6 @@ function AuthenticatedHeader({
   const menuRef = useRef<HTMLDivElement>(null);
   const firstName = String(userName).split(/\s+/)[0] || userName;
 
-  // Close on outside click + Escape
   useEffect(() => {
     if (!open) return undefined;
 
@@ -184,129 +261,117 @@ function AuthenticatedHeader({
     pathname === path || pathname.startsWith(`${path}/`);
 
   return (
-    <header className="border-b border-neutral-200 bg-white/80 backdrop-blur sticky top-0 z-30">
-      <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-        <Logo />
-        <nav className="flex items-center gap-4 md:gap-7 text-sm text-neutral-700">
-          <Link
-            href="/dashboard"
-            className={
-              isActive("/dashboard")
-                ? "hidden md:inline text-ink font-semibold"
-                : "hidden md:inline hover:text-ink"
-            }
-            aria-current={isActive("/dashboard") ? "page" : undefined}
+    <PillShell scrolled={scrolled}>
+      <PillLogo />
+
+      <span aria-hidden="true" className="hidden md:block h-5 w-px bg-neutral-800/80 mx-1" />
+
+      <nav className="hidden md:flex items-center gap-0.5 px-1">
+        <NavLink
+          href="/dashboard"
+          label="Dashboard"
+          active={isActive("/dashboard")}
+        />
+        <NavLink
+          href="/inspect"
+          label="Inspecionar"
+          active={isActive("/inspect")}
+        />
+        <NavLink
+          href="/cli"
+          label="CLI"
+          active={isActive("/cli")}
+        />
+      </nav>
+
+      <span aria-hidden="true" className="hidden md:block h-5 w-px bg-neutral-800/80 mx-1" />
+
+      <div className="lt-dropdown">
+        <button
+          ref={btnRef}
+          type="button"
+          onClick={(ev) => {
+            ev.stopPropagation();
+            setOpen((v) => !v);
+          }}
+          className="flex items-center gap-2 px-1.5 py-1 rounded-full hover:bg-white/5 transition"
+          aria-haspopup="true"
+          aria-expanded={open}
+        >
+          <span className="lt-avatar" aria-hidden="true" style={{ width: 28, height: 28, fontSize: 12 }}>
+            {initials(userName)}
+          </span>
+          <span className="hidden sm:flex flex-col items-start leading-tight text-left">
+            <span className="text-xs font-semibold text-paper">{firstName}</span>
+            <span className="text-[10px] text-neutral-400">{orgName}</span>
+          </span>
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 20 20"
+            fill="none"
+            aria-hidden="true"
+            className="text-neutral-400 mr-1"
           >
-            Dashboard
-          </Link>
-          <Link
-            href="/inspect"
-            className={
-              isActive("/inspect")
-                ? "hidden md:inline text-ink font-semibold"
-                : "hidden md:inline hover:text-ink"
-            }
-          >
+            <path
+              d="M5 8l5 5 5-5"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+        <div
+          ref={menuRef}
+          className={`lt-dropdown-menu${open ? " is-open" : ""}`}
+          role="menu"
+        >
+          <div className="px-3 py-2">
+            <p className="text-sm font-semibold text-paper leading-tight">{userName}</p>
+            <p className="text-xs text-neutral-400 leading-tight mt-0.5">
+              {userEmail}
+            </p>
+          </div>
+          <div className="lt-dropdown-divider" />
+          <Link href="/inspect" className="lt-dropdown-item" role="menuitem">
             Inspecionar repo
           </Link>
-          <Link
-            href="/cli"
-            className={
-              isActive("/cli")
-                ? "hidden md:inline text-ink font-semibold"
-                : "hidden md:inline hover:text-ink"
-            }
-          >
-            CLI
+          <Link href="/cli" className="lt-dropdown-item" role="menuitem">
+            Baixar CLI
           </Link>
-
-          <div className="lt-dropdown">
-            <button
-              ref={btnRef}
-              type="button"
-              onClick={(ev) => {
-                ev.stopPropagation();
-                setOpen((v) => !v);
-              }}
-              className="flex items-center gap-3 px-2 py-1 rounded-md hover:bg-neutral-100 transition"
-              aria-haspopup="true"
-              aria-expanded={open}
+          <Link href="/pricing" className="lt-dropdown-item" role="menuitem">
+            Planos
+          </Link>
+          <div className="lt-dropdown-divider" />
+          <button
+            type="button"
+            className="lt-dropdown-item"
+            role="menuitem"
+            onClick={() => {
+              setOpen(false);
+              void onLogout();
+            }}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
             >
-              <span className="lt-avatar" aria-hidden="true">
-                {initials(userName)}
-              </span>
-              <span className="hidden sm:flex flex-col items-start leading-tight text-left">
-                <span className="text-sm font-semibold text-ink">{firstName}</span>
-                <span className="text-xs text-neutral-500">{orgName}</span>
-              </span>
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 20 20"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M5 8l5 5 5-5"
-                  stroke="currentColor"
-                  strokeWidth="1.6"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
-            <div
-              ref={menuRef}
-              className={`lt-dropdown-menu${open ? " is-open" : ""}`}
-              role="menu"
-            >
-              <div className="px-3 py-2">
-                <p className="text-sm font-semibold text-ink leading-tight">{userName}</p>
-                <p className="text-xs text-neutral-500 leading-tight mt-0.5">
-                  {userEmail}
-                </p>
-              </div>
-              <div className="lt-dropdown-divider" />
-              <Link href="/inspect" className="lt-dropdown-item" role="menuitem">
-                Inspecionar repo
-              </Link>
-              <Link href="/cli" className="lt-dropdown-item" role="menuitem">
-                Baixar CLI
-              </Link>
-              <Link href="/pricing" className="lt-dropdown-item" role="menuitem">
-                Planos
-              </Link>
-              <div className="lt-dropdown-divider" />
-              <button
-                type="button"
-                className="lt-dropdown-item"
-                role="menuitem"
-                onClick={() => {
-                  setOpen(false);
-                  void onLogout();
-                }}
-              >
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 20 20"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <path
-                    d="M13 5V3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-2M16 10H8m0 0l3-3m-3 3l3 3"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-                Sair
-              </button>
-            </div>
-          </div>
-        </nav>
+              <path
+                d="M13 5V3a1 1 0 0 0-1-1H4a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1v-2M16 10H8m0 0l3-3m-3 3l3 3"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+            Sair
+          </button>
+        </div>
       </div>
-    </header>
+    </PillShell>
   );
 }

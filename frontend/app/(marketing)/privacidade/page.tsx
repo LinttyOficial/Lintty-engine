@@ -1,37 +1,42 @@
 import type { Metadata } from "next";
+import { AuroraPageHeader } from "@/components/HeroAurora";
 
 export const metadata: Metadata = {
-  title: "Politica de Privacidade — Lintty",
+  title: "Política de Privacidade — Lintty",
   description:
-    "Politica de Privacidade do Lintty: como tratamos dados coletados via landing page e canais de contato comercial, em conformidade com a LGPD.",
+    "Política de Privacidade do Lintty: como tratamos dados coletados via landing page e canais de contato comercial, em conformidade com a LGPD.",
   alternates: { canonical: "https://lintty.com/privacidade" },
   robots: { index: true, follow: true },
 };
 
 export default function PrivacidadePage() {
   return (
-    <main id="main" className="px-6 py-14">
-      <article className="privacy-article mx-auto max-w-3xl">
-        <h1>Politica de Privacidade &mdash; Lintty</h1>
-
-        <p>
-          <strong>Versao:</strong> 1.0 (Modo Projeto)
+    <>
+      <AuroraPageHeader
+        eyebrow="Compliance · LGPD"
+        title="Política de Privacidade — Lintty"
+        subtitle="Como tratamos os dados coletados via landing page e canais de contato comercial, em conformidade com a LGPD."
+      />
+      <main id="main" className="lt-dark-glow lt-noise px-6 py-14 text-paper">
+        <article className="privacy-article mx-auto max-w-3xl">
+          <p>
+          <strong>Versão:</strong> 1.0 (Modo Projeto)
           <br />
-          <strong>Data da ultima revisao:</strong> 28 de abril de 2026
+          <strong>Data da última revisão:</strong> 28 de abril de 2026
           <br />
-          <strong>Vigencia:</strong> a partir da publicacao na landing page{" "}
+          <strong>Vigência:</strong> a partir da publicação na landing page{" "}
           <code>lintty.com</code>.
         </p>
 
         <blockquote>
           <strong>
-            Modo atual: projeto pessoal em fase de validacao comercial.
+            Modo atual: projeto pessoal em fase de validação comercial.
           </strong>{" "}
-          O Lintty e, neste momento, um projeto operado por pessoa natural
-          (&ldquo;Operador&rdquo;), sem Pessoa Juridica formalizada. A constituicao
-          de PJ esta prevista para o momento da assinatura do primeiro contrato
-          de cliente. Esta Politica sera <strong>atualizada</strong> assim que a
-          PJ for constituida (com inclusao de razao social, CNPJ e endereco
+          O Lintty é, neste momento, um projeto operado por pessoa natural
+          (&ldquo;Operador&rdquo;), sem Pessoa Jurídica formalizada. A constituição
+          de PJ está prevista para o momento da assinatura do primeiro contrato
+          de cliente. Esta Política será <strong>atualizada</strong> assim que a
+          PJ for constituída (com inclusão de razão social, CNPJ e endereço
           fiscal).
         </blockquote>
 
@@ -39,42 +44,42 @@ export default function PrivacidadePage() {
 
         <h2>1. Quem somos</h2>
         <p>
-          A presente Politica descreve como o <strong>Lintty</strong> &mdash;
+          A presente Política descreve como o <strong>Lintty</strong> &mdash;
           projeto de software operado por{" "}
           <strong>[INSERIR NOME COMPLETO DO OPERADOR]</strong>, pessoa natural,
-          inscrita no CPF sob n&ordm; [INSERIR CPF], com endereco para contato
-          em [INSERIR ENDERECO PARA CITACAO] &mdash; trata os dados pessoais
+          inscrita no CPF sob n&ordm; [INSERIR CPF], com endereço para contato
+          em [INSERIR ENDEREÇO PARA CITAÇÃO] &mdash; trata os dados pessoais
           coletados em seu site institucional (<code>lintty.com</code>) e
-          canais de contato, em observancia a Lei Geral de Protecao de Dados
+          canais de contato, em observância à Lei Geral de Proteção de Dados
           Pessoais &mdash; LGPD (Lei n&ordm; 13.709/2018).
         </p>
         <p>
-          O Lintty e um{" "}
+          O Lintty é um{" "}
           <strong>
-            projeto de software de analise arquitetural automatizada
+            projeto de software de análise arquitetural automatizada
           </strong>{" "}
           para entregas de software .NET, em{" "}
-          <strong>fase de validacao comercial pre-revenue</strong>. Esta
-          Politica refere-se exclusivamente aos dados coletados via landing
-          page e canais de contato comercial. As condicoes de tratamento de{" "}
-          <strong>codigo fonte de clientes</strong>, quando e se o produto for
-          ativado em piloto ou contrato, serao regidas por{" "}
-          <strong>Acordo de Tratamento de Dados (DPA)</strong> especifico,
+          <strong>fase de validação comercial pré-revenue</strong>. Esta
+          Política refere-se exclusivamente aos dados coletados via landing
+          page e canais de contato comercial. As condições de tratamento de{" "}
+          <strong>código-fonte de clientes</strong>, quando e se o produto for
+          ativado em piloto ou contrato, serão regidas por{" "}
+          <strong>Acordo de Tratamento de Dados (DPA)</strong> específico,
           firmado entre as Partes.
         </p>
-        <p className="text-sm text-neutral-600">
-          <strong>Nota sobre formalizacao:</strong> quando o projeto for
-          constituido em Pessoa Juridica, esta secao sera substituida pela
-          razao social, CNPJ e endereco da PJ. A Politica sera re-publicada
-          com numeracao de versao atualizada e os titulares ativos serao
+        <p className="text-sm text-neutral-400">
+          <strong>Nota sobre formalização:</strong> quando o projeto for
+          constituído em Pessoa Jurídica, esta seção será substituída pela
+          razão social, CNPJ e endereço da PJ. A Política será re-publicada
+          com numeração de versão atualizada e os titulares ativos serão
           comunicados por email.
         </p>
 
         <h2>2. Dados que coletamos</h2>
         <p>
-          Coletamos exclusivamente os dados que voce nos fornece de forma ativa
-          ao preencher um formulario de contato ou de solicitacao de
-          demonstracao:
+          Coletamos exclusivamente os dados que você nos fornece de forma ativa
+          ao preencher um formulário de contato ou de solicitação de
+          demonstração:
         </p>
         <table>
           <thead>
@@ -87,79 +92,79 @@ export default function PrivacidadePage() {
           <tbody>
             <tr>
               <td>Nome</td>
-              <td>Formulario de demo/contato</td>
-              <td>Personalizacao da resposta comercial</td>
+              <td>Formulário de demo/contato</td>
+              <td>Personalização da resposta comercial</td>
             </tr>
             <tr>
               <td>
                 Email <strong>empresarial</strong>
               </td>
-              <td>Formulario de demo/contato</td>
+              <td>Formulário de demo/contato</td>
               <td>Canal de retorno para a conversa comercial</td>
             </tr>
             <tr>
               <td>Empresa</td>
-              <td>Formulario de demo/contato</td>
-              <td>Qualificacao do contato</td>
+              <td>Formulário de demo/contato</td>
+              <td>Qualificação do contato</td>
             </tr>
             <tr>
               <td>Mensagem (campo livre)</td>
-              <td>Formulario de demo/contato</td>
-              <td>Compreensao do interesse e contextualizacao da resposta</td>
+              <td>Formulário de demo/contato</td>
+              <td>Compreensão do interesse e contextualização da resposta</td>
             </tr>
           </tbody>
         </table>
         <p>
-          Nao coletamos dados via cookies de rastreamento de terceiros (vide
-          &sect;7). Nao solicitamos CPF, RG, telefone ou dados financeiros na
+          Não coletamos dados via cookies de rastreamento de terceiros (vide
+          &sect;7). Não solicitamos CPF, RG, telefone ou dados financeiros na
           landing page.
         </p>
 
         <h2>3. Finalidade do tratamento</h2>
         <p>
-          O tratamento dos dados acima tem <strong>finalidade unica</strong>:{" "}
+          O tratamento dos dados acima tem <strong>finalidade única</strong>:{" "}
           <strong>
-            contato comercial em resposta a sua solicitacao de demonstracao ou
-            informacao
+            contato comercial em resposta à sua solicitação de demonstração ou
+            informação
           </strong>
           .
         </p>
         <p>
-          Nao enviamos newsletter, marketing recorrente, ou qualquer
-          comunicacao fora do escopo da conversa comercial iniciada por voce,{" "}
-          <strong>salvo se voce optar expressamente</strong> por receber tal
-          comunicacao (opt-in explicito, por meio de aceite separado e
-          inequivoco).
+          Não enviamos newsletter, marketing recorrente, ou qualquer
+          comunicação fora do escopo da conversa comercial iniciada por você,{" "}
+          <strong>salvo se você optar expressamente</strong> por receber tal
+          comunicação (opt-in explícito, por meio de aceite separado e
+          inequívoco).
         </p>
         <p>
           <strong>Base legal (LGPD art. 7&ordm;):</strong> consentimento livre,
-          informado e especifico (inciso I) e legitimo interesse na execucao
-          de etapas pre-contratuais a pedido do titular (inciso V), conforme
-          aplicavel a cada etapa.
+          informado e específico (inciso I) e legítimo interesse na execução
+          de etapas pré-contratuais a pedido do titular (inciso V), conforme
+          aplicável a cada etapa.
         </p>
 
         <h2>4. Compartilhamento de dados</h2>
         <p>
-          <strong>Nao compartilhamos, vendemos ou cedemos</strong> seus dados
+          <strong>Não compartilhamos, vendemos ou cedemos</strong> seus dados
           de contato a terceiros para finalidade de marketing.
         </p>
         <p>
-          Os dados pessoais coletados via landing sao tratados internamente
+          Os dados pessoais coletados via landing são tratados internamente
           pela equipe comercial do Lintty.
         </p>
         <p>
           <strong>
-            Sub-operadores que processam dados quando o produto e ativado
+            Sub-operadores que processam dados quando o produto é ativado
           </strong>{" "}
-          (nao na landing &mdash; apenas quando voce se torna cliente e nos
-          fornece codigo fonte para analise):
+          (não na landing &mdash; apenas quando você se torna cliente e nos
+          fornece código-fonte para análise):
         </p>
         <table>
           <thead>
             <tr>
               <th>Sub-operador</th>
-              <th>Funcao</th>
-              <th>Localizacao</th>
+              <th>Função</th>
+              <th>Localização</th>
               <th>Salvaguarda</th>
             </tr>
           </thead>
@@ -172,39 +177,39 @@ export default function PrivacidadePage() {
               <td>
                 EUA (<code>us-east1</code>)
               </td>
-              <td>DPA padrao GCP, criptografia em transito e repouso</td>
+              <td>DPA padrão GCP, criptografia em trânsito e repouso</td>
             </tr>
           </tbody>
         </table>
         <p>
-          <strong>Nota sobre a versao atual do produto (Sales Cut):</strong> a
-          analise de codigo roda{" "}
+          <strong>Nota sobre a versão atual do produto (Sales Cut):</strong> a
+          análise de código roda{" "}
           <strong>localmente no laptop do operador</strong>, sem envio a
-          provedor de IA. Nao ha sub-operador de inferencia de modelo de
-          linguagem na cadeia. Em versao futura (V1+), pretendemos adicionar
-          Anthropic, PBC como sub-operador para analise semantica complementar,
+          provedor de IA. Não há sub-operador de inferência de modelo de
+          linguagem na cadeia. Em versão futura (V1+), pretendemos adicionar
+          Anthropic, PBC como sub-operador para análise semântica complementar,
           sob{" "}
           <strong>
             Zero Data Retention (ZDR) contratualizado
           </strong>
-          . Esta pagina sera atualizada antes da ativacao desse sub-operador.
+          . Esta página será atualizada antes da ativação desse sub-operador.
         </p>
         <p>
-          A relacao completa de sub-operadores e respectivos termos e fornecida
-          ao cliente no momento da contratacao, no DPA. Como cliente
-          enterprise, voce pode solicitar atualizacao da lista a qualquer
+          A relação completa de sub-operadores e respectivos termos é fornecida
+          ao cliente no momento da contratação, no DPA. Como cliente
+          enterprise, você pode solicitar atualização da lista a qualquer
           tempo.
         </p>
 
         <h2>5. Seus direitos como titular (LGPD art. 18)</h2>
-        <p>Voce tem o direito de, a qualquer tempo, mediante requisicao:</p>
+        <p>Você tem o direito de, a qualquer tempo, mediante requisição:</p>
         <ul>
           <li>
-            <strong>Confirmar</strong> a existencia de tratamento dos seus
+            <strong>Confirmar</strong> a existência de tratamento dos seus
             dados;
           </li>
           <li>
-            <strong>Acessar</strong> os dados que mantemos sobre voce;
+            <strong>Acessar</strong> os dados que mantemos sobre você;
           </li>
           <li>
             <strong>Corrigir</strong> dados incompletos, inexatos ou
@@ -212,12 +217,12 @@ export default function PrivacidadePage() {
           </li>
           <li>
             <strong>Anonimizar, bloquear ou eliminar</strong> dados
-            desnecessarios, excessivos ou tratados em desconformidade com a
+            desnecessários, excessivos ou tratados em desconformidade com a
             LGPD;
           </li>
           <li>
             <strong>Solicitar a portabilidade</strong> dos seus dados a outro
-            fornecedor de servico, observados os segredos comercial e
+            fornecedor de serviço, observados os segredos comercial e
             industrial;
           </li>
           <li>
@@ -225,37 +230,37 @@ export default function PrivacidadePage() {
             seu consentimento;
           </li>
           <li>
-            <strong>Obter informacao</strong> sobre as entidades publicas e
+            <strong>Obter informação</strong> sobre as entidades públicas e
             privadas com as quais compartilhamos seus dados;
           </li>
           <li>
-            <strong>Obter informacao</strong> sobre a possibilidade de nao
-            fornecer consentimento e suas consequencias;
+            <strong>Obter informação</strong> sobre a possibilidade de não
+            fornecer consentimento e suas consequências;
           </li>
           <li>
-            <strong>Revogar o consentimento</strong>, quando aplicavel.
+            <strong>Revogar o consentimento</strong>, quando aplicável.
           </li>
         </ul>
         <p>
-          <strong>Canal para exercicio dos direitos:</strong>{" "}
+          <strong>Canal para exercício dos direitos:</strong>{" "}
           <a href="mailto:privacidade@lintty.com">privacidade@lintty.com</a>.
         </p>
         <p>
-          <strong>Prazo de resposta:</strong> ate{" "}
+          <strong>Prazo de resposta:</strong> até{" "}
           <strong>15 (quinze) dias</strong> corridos contados da sua
-          requisicao.
+          requisição.
         </p>
         <p>
-          Para sua seguranca, podemos solicitar informacoes adicionais para
-          confirmacao de identidade antes de atender a requisicao.
+          Para sua segurança, podemos solicitar informações adicionais para
+          confirmação de identidade antes de atender à requisição.
         </p>
 
-        <h2>6. Retencao de dados</h2>
+        <h2>6. Retenção de dados</h2>
         <table>
           <thead>
             <tr>
               <th>Categoria</th>
-              <th>Prazo de retencao</th>
+              <th>Prazo de retenção</th>
               <th>Tratamento ao final</th>
             </tr>
           </thead>
@@ -266,30 +271,30 @@ export default function PrivacidadePage() {
                 <strong>sem contato comercial efetivo</strong>
               </td>
               <td>12 meses contados da coleta</td>
-              <td>Exclusao automatica</td>
+              <td>Exclusão automática</td>
             </tr>
             <tr>
               <td>Leads que viraram clientes</td>
-              <td>Conforme DPA da relacao contratual</td>
+              <td>Conforme DPA da relação contratual</td>
               <td>Conforme DPA</td>
             </tr>
             <tr>
-              <td>Logs de aplicacao (acessos ao site)</td>
+              <td>Logs de aplicação (acessos ao site)</td>
               <td>90 dias</td>
-              <td>Pseudo-anonimizacao e expurgo</td>
+              <td>Pseudo-anonimização e expurgo</td>
             </tr>
             <tr>
-              <td>Comunicacoes por email</td>
+              <td>Comunicações por email</td>
               <td>
-                Conforme politica de retencao interna do provedor de email + 24
-                meses para fins de prestacao de contas comerciais
+                Conforme política de retenção interna do provedor de email + 24
+                meses para fins de prestação de contas comerciais
               </td>
-              <td>Exclusao</td>
+              <td>Exclusão</td>
             </tr>
           </tbody>
         </table>
         <p>
-          Voce pode solicitar a exclusao imediata dos seus dados a qualquer
+          Você pode solicitar a exclusão imediata dos seus dados a qualquer
           tempo via canal indicado em &sect;5.
         </p>
 
@@ -297,39 +302,39 @@ export default function PrivacidadePage() {
         <p>
           A landing page do Lintty{" "}
           <strong>
-            nao utiliza cookies de rastreamento de terceiros
+            não utiliza cookies de rastreamento de terceiros
           </strong>{" "}
           (Google Analytics, Facebook Pixel, ferramentas de remarketing).
         </p>
         <p>
           [Caso utilize Plausible Analytics ou Umami: declarar aqui &mdash;
           &ldquo;Utilizamos a ferramenta de analytics Plausible/Umami, que
-          opera sem cookies e sem coleta de dados pessoais identificaveis, em
+          opera sem cookies e sem coleta de dados pessoais identificáveis, em
           conformidade com LGPD/GDPR.&rdquo;]
         </p>
         <p>
-          Cookies estritamente tecnicos podem ser utilizados para funcionamento
-          da pagina (ex: preferencia de idioma) e nao armazenam dados
+          Cookies estritamente técnicos podem ser utilizados para funcionamento
+          da página (ex: preferência de idioma) e não armazenam dados
           pessoais.
         </p>
 
-        <h2>8. Seguranca</h2>
+        <h2>8. Segurança</h2>
         <p>
-          Adotamos medidas tecnicas e organizacionais para proteger seus dados
-          contra acessos nao autorizados, perda, alteracao ou destruicao,
+          Adotamos medidas técnicas e organizacionais para proteger seus dados
+          contra acessos não autorizados, perda, alteração ou destruição,
           incluindo:
         </p>
         <ul>
-          <li>Comunicacao criptografada (TLS 1.3);</li>
-          <li>Principio do menor privilegio nos acessos internos;</li>
-          <li>Autenticacao multifator obrigatoria para a equipe;</li>
-          <li>Pseudo-anonimizacao em logs de aplicacao;</li>
-          <li>Auditoria periodica de acessos.</li>
+          <li>Comunicação criptografada (TLS 1.3);</li>
+          <li>Princípio do menor privilégio nos acessos internos;</li>
+          <li>Autenticação multifator obrigatória para a equipe;</li>
+          <li>Pseudo-anonimização em logs de aplicação;</li>
+          <li>Auditoria periódica de acessos.</li>
         </ul>
         <p>
-          Apesar de todos os esforcos, nenhum sistema e absolutamente
-          invulneravel. Em caso de incidente que envolva seus dados,
-          comunicaremos voce e a Autoridade Nacional de Protecao de Dados
+          Apesar de todos os esforços, nenhum sistema é absolutamente
+          invulnerável. Em caso de incidente que envolva seus dados,
+          comunicaremos você e a Autoridade Nacional de Proteção de Dados
           (ANPD) nos prazos previstos na LGPD.
         </p>
 
@@ -337,46 +342,47 @@ export default function PrivacidadePage() {
         <p>Para os fins do art. 41 da LGPD, designamos como Encarregado:</p>
         <p>
           <strong>[INSERIR NOME DO ENCARREGADO]</strong> (no Modo Projeto, pode
-          ser o proprio Operador ou DPO terceirizado).
+          ser o próprio Operador ou DPO terceirizado).
           <br />
           <strong>Email:</strong>{" "}
           <a href="mailto:privacidade@lintty.com">privacidade@lintty.com</a>
         </p>
-        <p className="text-sm text-neutral-600">
-          <strong>Modo Projeto:</strong> com a constituicao da PJ, esta
-          designacao sera revisada e oficializada conforme art. 41 da LGPD.
+        <p className="text-sm text-neutral-400">
+          <strong>Modo Projeto:</strong> com a constituição da PJ, esta
+          designação será revisada e oficializada conforme art. 41 da LGPD.
         </p>
 
-        <h2>10. Alteracoes a esta Politica</h2>
+        <h2>10. Alterações a esta Política</h2>
         <p>
-          Esta Politica pode ser atualizada periodicamente. Sempre que houver
-          alteracao relevante, indicaremos a nova{" "}
-          <strong>data da ultima revisao</strong> no topo do documento e,
-          quando aplicavel, comunicaremos os titulares cujos dados estejam em
+          Esta Política pode ser atualizada periodicamente. Sempre que houver
+          alteração relevante, indicaremos a nova{" "}
+          <strong>data da última revisão</strong> no topo do documento e,
+          quando aplicável, comunicaremos os titulares cujos dados estejam em
           tratamento ativo.
         </p>
         <p>
-          <strong>Versao atual:</strong> 1.0
+          <strong>Versão atual:</strong> 1.0
           <br />
-          <strong>Data da ultima revisao:</strong> 27 de abril de 2026.
+          <strong>Data da última revisão:</strong> 27 de abril de 2026.
         </p>
 
         <h2>11. Contato</h2>
-        <p>Duvidas sobre esta Politica ou sobre o tratamento dos seus dados:</p>
+        <p>Dúvidas sobre esta Política ou sobre o tratamento dos seus dados:</p>
         <ul>
           <li>
             <strong>Privacidade e LGPD:</strong>{" "}
             <a href="mailto:privacidade@lintty.com">privacidade@lintty.com</a>
           </li>
           <li>
-            <strong>Seguranca:</strong>{" "}
+            <strong>Segurança:</strong>{" "}
             <a href="mailto:seguranca@lintty.com">seguranca@lintty.com</a>
           </li>
           <li>
             <strong>Comercial:</strong> [INSERIR EMAIL COMERCIAL]
           </li>
         </ul>
-      </article>
-    </main>
+        </article>
+      </main>
+    </>
   );
 }

@@ -55,8 +55,8 @@ export function InspectCompleted({ data, onRestart }: InspectCompletedProps) {
 
   return (
     <section className="mt-10" aria-labelledby="completed-heading">
-      <div className="bg-white border border-neutral-200 rounded-xl p-6 md:p-8 shadow-sm">
-        <p className="text-xs font-semibold tracking-widest text-saint uppercase">
+      <div className="lt-card-form p-6 md:p-8">
+        <p className="text-xs font-semibold tracking-widest text-emerald-300/80 uppercase">
           Análise concluída
         </p>
 
@@ -65,10 +65,10 @@ export function InspectCompleted({ data, onRestart }: InspectCompletedProps) {
             {grade}
           </div>
           <div>
-            <h2 id="completed-heading" className="text-2xl font-bold tracking-tight">
+            <h2 id="completed-heading" className="text-2xl font-bold tracking-tight text-paper">
               Score <span>{data.score ?? 0}</span>/100
             </h2>
-            <p className="mt-1 text-sm text-neutral-700">
+            <p className="mt-1 text-sm text-neutral-300">
               <span>{data.violation_count ?? 0}</span> violações &middot;{" "}
               <span>{data.hard_locks_open ?? 0}</span> hard locks abertos
             </p>
@@ -82,7 +82,7 @@ export function InspectCompleted({ data, onRestart }: InspectCompletedProps) {
           <a
             href={pdfHref}
             download={pdfFilename}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-ink text-white font-semibold hover:bg-neutral-800 transition"
+            className="lt-btn-primary"
           >
             Baixar laudo.pdf
             <span aria-hidden="true">↓</span>
@@ -91,17 +91,17 @@ export function InspectCompleted({ data, onRestart }: InspectCompletedProps) {
             href={jsonHref}
             target="_blank"
             rel="noopener"
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-md border border-neutral-300 text-neutral-800 font-medium hover:bg-neutral-100 transition"
+            className="lt-btn-secondary"
           >
             Ver JSON
           </a>
         </div>
 
         <p className="mt-6 text-xs text-neutral-500">
-          Os artefatos expiram em <span className="font-mono">{expiresLabel}</span>. PDF
-          gerado com <code className="font-mono">hash_content</code> SHA-256 no rodapé —
+          Os artefatos expiram em <span className="font-mono text-neutral-300">{expiresLabel}</span>. PDF
+          gerado com <code className="font-mono text-neutral-300">hash_content</code> SHA-256 no rodapé —
           rode o mesmo commit no{" "}
-          <Link href="/cli" className="underline">
+          <Link href="/cli" className="underline decoration-emerald-400/50 underline-offset-2 text-emerald-200 hover:text-emerald-100">
             CLI local
           </Link>{" "}
           e o hash bate.
@@ -110,7 +110,7 @@ export function InspectCompleted({ data, onRestart }: InspectCompletedProps) {
         <button
           type="button"
           onClick={onRestart}
-          className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 text-sm text-neutral-700 hover:bg-neutral-100 transition"
+          className="mt-6 lt-btn-secondary text-sm"
         >
           Analisar outro repositório
         </button>

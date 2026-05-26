@@ -77,18 +77,18 @@ export function GitHubDisconnectModal({
       >
         <h2
           id="gh-disconnect-title"
-          className="text-lg font-bold tracking-tight text-ink"
+          className="text-lg font-bold tracking-tight text-paper"
         >
           Desconectar GitHub?
         </h2>
         <p
           id="gh-disconnect-desc"
-          className="mt-3 text-sm text-neutral-700 leading-relaxed"
+          className="mt-3 text-sm text-neutral-300 leading-relaxed"
         >
           Você deixará de conseguir importar ou analisar repositórios
           privados. Repositórios já cadastrados continuam visíveis, mas
           scans futuros em privados vão falhar com{" "}
-          <code className="font-mono text-xs bg-neutral-100 border border-neutral-200 rounded px-1 py-0.5">
+          <code className="font-mono text-xs bg-white/5 border border-neutral-800/60 text-paper rounded px-1 py-0.5">
             GITHUB_TOKEN_REVOKED
           </code>{" "}
           até você reconectar.
@@ -100,7 +100,7 @@ export function GitHubDisconnectModal({
             type="button"
             onClick={handleClose}
             disabled={pending}
-            className="px-4 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition disabled:opacity-50"
+            className="lt-btn-secondary text-sm px-4 py-2 disabled:opacity-50"
           >
             Cancelar
           </button>
@@ -108,7 +108,7 @@ export function GitHubDisconnectModal({
             type="button"
             onClick={onConfirm}
             disabled={pending}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md bg-sinner text-white text-sm font-semibold hover:bg-[#5a1717] transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md bg-red-600 text-white text-sm font-semibold hover:bg-red-500 transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md shadow-red-900/40"
           >
             {pending ? "Desconectando..." : "Desconectar"}
           </button>

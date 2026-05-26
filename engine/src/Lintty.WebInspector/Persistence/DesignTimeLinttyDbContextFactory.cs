@@ -18,7 +18,7 @@ public sealed class DesignTimeLinttyDbContextFactory : IDesignTimeDbContextFacto
     public LinttyDbContext CreateDbContext(string[] args)
     {
         var conn = Environment.GetEnvironmentVariable("LINTTY_POSTGRES__CONNECTIONSTRING")
-            ?? "Host=localhost;Port=5433;Database=lintty_dev;Username=lintty;Password=lintty_dev";
+            ?? "Host=localhost;Port=5434;Database=lintty_dev;Username=lintty;Password=lintty_dev";
 
         var options = new DbContextOptionsBuilder<LinttyDbContext>()
             .UseNpgsql(conn)

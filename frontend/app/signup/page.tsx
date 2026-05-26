@@ -6,6 +6,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SkipLink } from "@/components/SkipLink";
+import { AuroraPageHeader } from "@/components/HeroAurora";
 import { backendUrl } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -168,27 +169,23 @@ export default function SignupPage() {
     <>
       <SkipLink />
       <Header />
-      <main id="main" className="px-6 py-12 md:py-16">
+      <AuroraPageHeader
+        maxWidthClass="max-w-md"
+        eyebrow="Lintty Dashboard · Beta"
+        title="Crie sua conta Lintty."
+        subtitle="Tenha laudos byte-determinísticos da sua equipe inteira."
+      />
+      <main id="main" className="lt-dark-glow lt-noise px-6 py-12 md:py-16 text-paper">
         <div className="max-w-md mx-auto">
-          <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-3">
-            Lintty Dashboard &middot; Beta
-          </p>
-          <h1 className="text-3xl md:text-4xl font-bold leading-tight tracking-tight">
-            Crie sua conta Lintty.
-          </h1>
-          <p className="mt-3 text-neutral-700">
-            Tenha laudos byte-determinísticos da sua equipe inteira.
-          </p>
-
           <form
             id="signup-form"
             noValidate
             onSubmit={handleSubmit}
-            className="mt-8 bg-white border border-neutral-200 rounded-xl p-6 md:p-8 shadow-sm space-y-5"
+            className="mt-8 lt-card-form p-6 md:p-8 space-y-5"
           >
             <div>
-              <label htmlFor="displayName" className="block text-sm font-semibold mb-2">
-                Nome completo <span className="text-sinner" aria-hidden="true">*</span>
+              <label htmlFor="displayName" className="block text-sm font-semibold mb-2 text-paper">
+                Nome completo <span className="text-red-300" aria-hidden="true">*</span>
               </label>
               <input
                 id="displayName"
@@ -203,7 +200,7 @@ export default function SignupPage() {
                   setFieldError("displayName", undefined);
                 }}
                 aria-invalid={fieldErrors.displayName ? "true" : undefined}
-                className="w-full px-4 py-3 border border-neutral-300 rounded-md text-sm bg-white focus:border-saint focus:outline-none transition"
+                className="lt-input"
               />
               {fieldErrors.displayName && (
                 <p className="field-error" role="alert" aria-live="polite">
@@ -213,8 +210,8 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label htmlFor="email" className="block text-sm font-semibold mb-2">
-                Email corporativo <span className="text-sinner" aria-hidden="true">*</span>
+              <label htmlFor="email" className="block text-sm font-semibold mb-2 text-paper">
+                Email corporativo <span className="text-red-300" aria-hidden="true">*</span>
               </label>
               <input
                 id="email"
@@ -229,7 +226,7 @@ export default function SignupPage() {
                   setFieldError("email", undefined);
                 }}
                 aria-invalid={fieldErrors.email ? "true" : undefined}
-                className="w-full px-4 py-3 border border-neutral-300 rounded-md text-sm bg-white focus:border-saint focus:outline-none transition"
+                className="lt-input"
               />
               {fieldErrors.email && (
                 <p className="field-error" role="alert" aria-live="polite">
@@ -239,8 +236,8 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label htmlFor="password" className="block text-sm font-semibold mb-2">
-                Senha <span className="text-sinner" aria-hidden="true">*</span>
+              <label htmlFor="password" className="block text-sm font-semibold mb-2 text-paper">
+                Senha <span className="text-red-300" aria-hidden="true">*</span>
               </label>
               <input
                 id="password"
@@ -256,7 +253,7 @@ export default function SignupPage() {
                   setFieldError("password", undefined);
                 }}
                 aria-invalid={fieldErrors.password ? "true" : undefined}
-                className="w-full px-4 py-3 border border-neutral-300 rounded-md text-sm bg-white focus:border-saint focus:outline-none transition"
+                className="lt-input"
               />
               <div className="pwd-strength" aria-hidden="true">
                 <div className={`pwd-strength-bar ${pwdStrength.class}`} />
@@ -270,8 +267,8 @@ export default function SignupPage() {
             </div>
 
             <div>
-              <label htmlFor="orgName" className="block text-sm font-semibold mb-2">
-                Nome da organização <span className="text-sinner" aria-hidden="true">*</span>
+              <label htmlFor="orgName" className="block text-sm font-semibold mb-2 text-paper">
+                Nome da organização <span className="text-red-300" aria-hidden="true">*</span>
               </label>
               <input
                 id="orgName"
@@ -286,7 +283,7 @@ export default function SignupPage() {
                   setFieldError("orgName", undefined);
                 }}
                 aria-invalid={fieldErrors.orgName ? "true" : undefined}
-                className="w-full px-4 py-3 border border-neutral-300 rounded-md text-sm bg-white focus:border-saint focus:outline-none transition"
+                className="lt-input"
               />
               <p className="mt-2 text-xs text-neutral-500">
                 É o workspace da sua equipe. Você pode convidar usuários depois.
@@ -299,7 +296,7 @@ export default function SignupPage() {
             </div>
 
             <div className="pt-1">
-              <label className="flex items-start gap-3 text-sm text-neutral-700 cursor-pointer">
+              <label className="flex items-start gap-3 text-sm text-neutral-300 cursor-pointer">
                 <input
                   id="acceptTerms"
                   name="acceptTerms"
@@ -310,13 +307,13 @@ export default function SignupPage() {
                     setAcceptTerms(e.target.checked);
                     setFieldError("acceptTerms", undefined);
                   }}
-                  className="mt-1 w-4 h-4 border-neutral-400 rounded text-saint focus:ring-saint"
+                  className="mt-1 w-4 h-4 rounded bg-neutral-900 border-neutral-600 text-saint focus:ring-emerald-500/40"
                 />
                 <span>
                   Aceito os termos de uso e a{" "}
                   <Link
                     href="/privacidade"
-                    className="underline decoration-neutral-400 underline-offset-2 hover:text-ink hover:decoration-ink"
+                    className="underline decoration-emerald-400/50 underline-offset-2 text-emerald-200 hover:text-emerald-100"
                   >
                     política de privacidade
                   </Link>
@@ -332,7 +329,7 @@ export default function SignupPage() {
 
             {globalError && (
               <div
-                className="bg-sinner-bg border border-sinner/20 text-sinner text-sm rounded-md px-4 py-3"
+                className="lt-alert-danger"
                 role="alert"
                 aria-live="polite"
               >
@@ -343,7 +340,7 @@ export default function SignupPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md bg-ink text-white font-semibold hover:bg-neutral-800 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full lt-btn-primary"
             >
               <span>{submitting ? "Criando conta..." : "Criar conta"}</span>
               <span aria-hidden="true">→</span>
@@ -351,9 +348,9 @@ export default function SignupPage() {
           </form>
 
           <div className="my-6 flex items-center gap-4" aria-hidden="true">
-            <div className="flex-1 h-px bg-neutral-200" />
+            <div className="flex-1 h-px bg-neutral-800/60" />
             <span className="text-xs uppercase tracking-widest text-neutral-500">ou</span>
-            <div className="flex-1 h-px bg-neutral-200" />
+            <div className="flex-1 h-px bg-neutral-800/60" />
           </div>
 
           <button
@@ -361,7 +358,7 @@ export default function SignupPage() {
             onClick={() => {
               window.location.href = backendUrl("/api/auth/github/start");
             }}
-            className="w-full inline-flex items-center justify-center gap-3 px-6 py-3 rounded-md border border-neutral-300 bg-white text-neutral-800 font-medium hover:bg-neutral-100 transition"
+            className="w-full lt-btn-secondary gap-3"
           >
             <svg
               width="20"
@@ -375,11 +372,11 @@ export default function SignupPage() {
             Continuar com GitHub
           </button>
 
-          <p className="mt-6 text-center text-sm text-neutral-700">
+          <p className="mt-6 text-center text-sm text-neutral-400">
             Já tem conta?{" "}
             <Link
               href="/login"
-              className="font-semibold underline decoration-neutral-400 underline-offset-2 hover:text-ink hover:decoration-ink"
+              className="font-semibold underline decoration-emerald-400/50 underline-offset-2 text-emerald-200 hover:text-emerald-100"
             >
               Entrar
             </Link>

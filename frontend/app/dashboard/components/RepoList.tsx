@@ -80,7 +80,7 @@ function RepoListSkeleton() {
       {[0, 1, 2].map((i) => (
         <li
           key={i}
-          className="bg-white border border-neutral-200 rounded-xl p-5 shadow-sm"
+          className="lt-card-form p-5"
         >
           <div className="lt-skeleton h-5 w-1/3 mb-3" />
           <div className="lt-skeleton h-3 w-2/3" />
@@ -99,19 +99,20 @@ function RepoListError({
 }) {
   return (
     <div
-      className="bg-sinner-bg border border-sinner/20 rounded-xl p-6"
+      className="lt-card-form p-6"
+      style={{ borderColor: "rgba(220, 38, 38, 0.35)" }}
       role="alert"
       aria-live="polite"
     >
-      <p className="text-sinner font-semibold">Não foi possível carregar a lista</p>
-      <p className="mt-2 text-sm text-neutral-700">
+      <p className="text-red-300 font-semibold">Não foi possível carregar a lista</p>
+      <p className="mt-2 text-sm text-neutral-300">
         {message ??
           "Não conseguimos contatar o servidor para listar seus repositórios."}
       </p>
       <button
         type="button"
         onClick={onRetry}
-        className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+        className="mt-4 lt-btn-primary text-sm"
       >
         Tentar novamente
       </button>
@@ -121,18 +122,18 @@ function RepoListError({
 
 function RepoListEmpty({ onAddRepo }: { onAddRepo: () => void }) {
   return (
-    <div className="bg-white border border-dashed border-neutral-300 rounded-xl p-10 text-center">
-      <p className="text-base font-semibold text-ink">
+    <div className="bg-white/[0.02] border border-dashed border-neutral-700/60 rounded-xl p-10 text-center">
+      <p className="text-base font-semibold text-paper">
         Nenhum repositório ainda
       </p>
-      <p className="mt-2 text-sm text-neutral-600 max-w-md mx-auto">
+      <p className="mt-2 text-sm text-neutral-400 max-w-md mx-auto">
         Adicione um repositório do GitHub para disparar scans
         org-bound. O histórico fica compartilhado com toda a sua equipe.
       </p>
       <button
         type="button"
         onClick={onAddRepo}
-        className="mt-5 inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition"
+        className="mt-5 lt-btn-primary px-5 py-2.5"
       >
         Adicionar repositório
       </button>
@@ -182,19 +183,19 @@ function RepoListItem({ repo, onDeleted }: RepoListItemProps) {
   }
 
   return (
-    <article className="bg-white border border-neutral-200 rounded-xl shadow-sm hover:border-neutral-300 transition">
+    <article className="lt-card-soft bg-neutral-900/40 rounded-xl transition">
       <div className="flex items-center justify-between gap-4 p-5">
         <Link
           href={`/dashboard/repos/${repo.id}`}
           className="flex-1 min-w-0 group"
         >
           <div className="flex items-center gap-2">
-            <p className="font-semibold text-ink truncate group-hover:underline decoration-neutral-300 underline-offset-2">
+            <p className="font-semibold text-paper truncate group-hover:underline decoration-emerald-400/40 underline-offset-2">
               {label}
             </p>
             {repo.isPrivate && (
               <span
-                className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-700 bg-neutral-100 border border-neutral-200 rounded px-1.5 py-0.5"
+                className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-300 bg-white/5 border border-neutral-700/60 rounded px-1.5 py-0.5"
                 title="Repositório privado"
               >
                 privado
@@ -215,7 +216,7 @@ function RepoListItem({ repo, onDeleted }: RepoListItemProps) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={(ev) => ev.stopPropagation()}
-            className="inline-flex items-center justify-center w-9 h-9 rounded-md border border-neutral-200 text-neutral-600 hover:text-ink hover:bg-neutral-50 transition"
+            className="inline-flex items-center justify-center w-9 h-9 rounded-md border border-neutral-800/60 text-neutral-400 hover:text-paper hover:bg-white/5 transition"
             aria-label={`Abrir ${label} no GitHub`}
             title="Abrir no GitHub"
           >
@@ -233,7 +234,7 @@ function RepoListItem({ repo, onDeleted }: RepoListItemProps) {
             type="button"
             onClick={handleRemove}
             disabled={deleting}
-            className="inline-flex items-center px-3 h-9 rounded-md border border-neutral-200 text-sm text-neutral-700 hover:text-sinner hover:border-sinner/30 hover:bg-sinner-bg transition disabled:opacity-50"
+            className="inline-flex items-center px-3 h-9 rounded-md border border-neutral-800/60 text-sm text-neutral-300 hover:text-red-300 hover:border-red-500/40 hover:bg-red-500/10 transition disabled:opacity-50"
             aria-label={`Remover ${label}`}
           >
             {deleting ? "Removendo..." : "Remover"}
@@ -242,7 +243,7 @@ function RepoListItem({ repo, onDeleted }: RepoListItemProps) {
       </div>
       {error && (
         <p
-          className="px-5 pb-4 -mt-1 text-sm text-sinner"
+          className="px-5 pb-4 -mt-1 text-sm text-red-300"
           role="alert"
           aria-live="polite"
         >

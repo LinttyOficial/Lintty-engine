@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { AuroraPageHeader } from "@/components/HeroAurora";
 
 export const metadata: Metadata = {
   title: "Planos — Lintty",
@@ -121,48 +122,47 @@ function tierLabel(tier: Tier): string {
 
 export default function PricingPage() {
   return (
-    <main id="main" className="px-6 py-12 md:py-20">
-      {/* Hero */}
-      <div className="max-w-3xl mx-auto text-center">
-        <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-3">
-          Planos Lintty &middot; Beta
-        </p>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight">
-          Mesmo motor. Três tamanhos.
-        </h1>
-        <p className="mt-5 text-neutral-700 max-w-2xl mx-auto">
-          Roslyn type-aware, determinismo bit-a-bit, código nunca sai do seu equipamento
-          (CLI) ou descartado em até 60 segundos (Web Inspector). O preço cobre o time, não
-          o motor.
-        </p>
-
-        <div className="mt-6 inline-flex items-center gap-2 bg-saint-bg border border-saint/20 text-saint text-sm rounded-md px-4 py-2">
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 20 20"
-            fill="none"
-            aria-hidden="true"
-          >
-            <path
-              d="M10 2a8 8 0 100 16 8 8 0 000-16zM10 7v4M10 14h.01"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-            />
-          </svg>
-          <strong>Preços em validação.</strong> Entre em contato para fechar.
-        </div>
-      </div>
-
+    <>
+      <AuroraPageHeader
+        align="center"
+        eyebrow="Planos Lintty · Beta"
+        title="Mesmo motor. Três tamanhos."
+        subtitle={
+          <>
+            Roslyn type-aware, determinismo bit-a-bit, código nunca sai do seu equipamento
+            (CLI) ou descartado em até 60 segundos (Web Inspector). O preço cobre o time, não
+            o motor.
+          </>
+        }
+        extra={
+          <span className="inline-flex items-center gap-2 bg-emerald-500/10 border border-emerald-400/30 text-emerald-200 text-sm rounded-md px-4 py-2">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 20 20"
+              fill="none"
+              aria-hidden="true"
+            >
+              <path
+                d="M10 2a8 8 0 100 16 8 8 0 000-16zM10 7v4M10 14h.01"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+              />
+            </svg>
+            <strong>Preços em validação.</strong> Entre em contato para fechar.
+          </span>
+        }
+      />
+      <main id="main" className="lt-dark-glow lt-noise px-6 py-12 md:py-20 text-paper">
       {/* Cards */}
       <div className="mt-14 max-w-6xl mx-auto grid md:grid-cols-3 gap-6">
         {TIERS.map((tier) => {
           const copy = tierCopy(tier);
           const isFeatured = tier.featured;
           const ctaClass = copy.cta.primary
-            ? "mt-6 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md bg-ink text-white font-semibold hover:bg-neutral-800 transition"
-            : "mt-6 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md border border-neutral-300 text-neutral-800 font-medium hover:bg-neutral-100 transition";
+            ? "mt-6 inline-flex items-center justify-center gap-2 px-6 py-3 rounded-md bg-saint text-white font-semibold hover:bg-emerald-600 transition shadow-lg shadow-emerald-900/40"
+            : "mt-6 lt-btn-secondary";
 
           // Internal link uses Next <Link>, mailto: stays as plain anchor.
           const Cta = copy.cta.href.startsWith("/") ? (
@@ -180,20 +180,20 @@ export default function PricingPage() {
           return (
             <article
               key={tier.name}
-              className={`tier-card bg-white border border-neutral-200 rounded-xl p-7${
-                isFeatured ? " is-featured" : ""
-              }`}
+              className={`tier-card ${
+                isFeatured ? "is-featured" : "lt-card-soft bg-neutral-900/40"
+              } rounded-xl p-7`}
             >
               <p
                 className={`text-xs font-semibold tracking-widest uppercase mb-3 ${
-                  isFeatured ? "text-saint" : "text-neutral-500"
+                  isFeatured ? "text-emerald-300" : "text-neutral-400"
                 }`}
               >
                 {tierLabel(tier)}
               </p>
-              <h2 className="text-2xl font-bold tracking-tight">{tier.name}</h2>
+              <h2 className="text-2xl font-bold tracking-tight text-paper">{tier.name}</h2>
               <div className="mt-4">
-                <span className="text-4xl font-bold tracking-tight">
+                <span className="text-4xl font-bold tracking-tight text-paper">
                   {tier.displayPrice}
                 </span>
                 <p className="mt-1 text-xs text-neutral-500">
@@ -204,9 +204,9 @@ export default function PricingPage() {
                 {copy.bullets.map((b) => (
                   <li
                     key={b}
-                    className="flex gap-3 text-sm text-neutral-700"
+                    className="flex gap-3 text-sm text-neutral-300"
                   >
-                    <span className="text-saint mt-0.5" aria-hidden="true">
+                    <span className="text-emerald-300 mt-0.5" aria-hidden="true">
                       ✓
                     </span>
                     <span>{b}</span>
@@ -221,12 +221,12 @@ export default function PricingPage() {
 
       {/* FAQ */}
       <section className="mt-20 max-w-3xl mx-auto">
-        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-paper">
           Perguntas frequentes
         </h2>
         <div className="mt-8 space-y-4">
-          <details className="bg-white border border-neutral-200 rounded-xl p-5 group">
-            <summary className="cursor-pointer font-semibold text-ink list-none flex items-center justify-between">
+          <details className="lt-card-soft bg-neutral-900/40 rounded-xl p-5 group">
+            <summary className="cursor-pointer font-semibold text-paper list-none flex items-center justify-between">
               <span>O CLI é grátis mesmo sem conta?</span>
               <span
                 aria-hidden="true"
@@ -235,16 +235,16 @@ export default function PricingPage() {
                 ↓
               </span>
             </summary>
-            <p className="mt-3 text-sm text-neutral-700">
-              Sim. O <Link href="/cli" className="underline">CLI Lintty</Link> é distribuído
+            <p className="mt-3 text-sm text-neutral-300">
+              Sim. O <Link href="/cli" className="underline decoration-emerald-400/50 underline-offset-2 text-emerald-200 hover:text-emerald-100">CLI Lintty</Link> é distribuído
               via GitHub Releases e roda 100% no seu equipamento, com o mesmo motor que
               alimenta o dashboard. Os planos pagos cobrem o uso do dashboard multi-tenant
               (histórico compartilhado, gestão de membros, scans org-bound) — não o motor em
               si.
             </p>
           </details>
-          <details className="bg-white border border-neutral-200 rounded-xl p-5 group">
-            <summary className="cursor-pointer font-semibold text-ink list-none flex items-center justify-between">
+          <details className="lt-card-soft bg-neutral-900/40 rounded-xl p-5 group">
+            <summary className="cursor-pointer font-semibold text-paper list-none flex items-center justify-between">
               <span>Os preços são definitivos?</span>
               <span
                 aria-hidden="true"
@@ -253,15 +253,15 @@ export default function PricingPage() {
                 ↓
               </span>
             </summary>
-            <p className="mt-3 text-sm text-neutral-700">
+            <p className="mt-3 text-sm text-neutral-300">
               Não. Os valores em destaque são uma referência inicial e estão sendo validados
               com os primeiros clientes do varejo enterprise brasileiro. Se algum tier faz
               sentido para você, fale com a gente — fechamos contrato direto e respeitamos a
               referência.
             </p>
           </details>
-          <details className="bg-white border border-neutral-200 rounded-xl p-5 group">
-            <summary className="cursor-pointer font-semibold text-ink list-none flex items-center justify-between">
+          <details className="lt-card-soft bg-neutral-900/40 rounded-xl p-5 group">
+            <summary className="cursor-pointer font-semibold text-paper list-none flex items-center justify-between">
               <span>O que conta como um &ldquo;scan/mês&rdquo;?</span>
               <span
                 aria-hidden="true"
@@ -270,15 +270,15 @@ export default function PricingPage() {
                 ↓
               </span>
             </summary>
-            <p className="mt-3 text-sm text-neutral-700">
+            <p className="mt-3 text-sm text-neutral-300">
               Cada execução do motor que gera um laudo PDF — seja via Web Inspector ou via
               API — conta como um scan. Re-runs do mesmo commit dentro de 5 minutos não
               contam (cache de idempotência). Uso pelo CLI local não conta para a quota do
               plano.
             </p>
           </details>
-          <details className="bg-white border border-neutral-200 rounded-xl p-5 group">
-            <summary className="cursor-pointer font-semibold text-ink list-none flex items-center justify-between">
+          <details className="lt-card-soft bg-neutral-900/40 rounded-xl p-5 group">
+            <summary className="cursor-pointer font-semibold text-paper list-none flex items-center justify-between">
               <span>Tem acordo anual / desconto?</span>
               <span
                 aria-hidden="true"
@@ -287,12 +287,12 @@ export default function PricingPage() {
                 ↓
               </span>
             </summary>
-            <p className="mt-3 text-sm text-neutral-700">
+            <p className="mt-3 text-sm text-neutral-300">
               Para Enterprise, sim — fechamos contrato anual com NF-e, DPA assinado e SLA
               combinado no escopo. Mande email para{" "}
               <a
                 href="mailto:vinicius@landtech.com.br"
-                className="underline"
+                className="underline decoration-emerald-400/50 underline-offset-2 text-emerald-200 hover:text-emerald-100"
               >
                 vinicius@landtech.com.br
               </a>{" "}
@@ -304,28 +304,29 @@ export default function PricingPage() {
 
       {/* CTA final */}
       <section className="mt-20 max-w-3xl mx-auto text-center">
-        <h2 className="text-2xl md:text-3xl font-bold tracking-tight">
+        <h2 className="text-2xl md:text-3xl font-bold tracking-tight text-paper">
           Quer testar o motor antes?
         </h2>
-        <p className="mt-4 text-neutral-700">
+        <p className="mt-4 text-neutral-300">
           Sem signup. Sem cartão. Cole a URL de um repo público no Web Inspector ou baixe o
           CLI.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-3">
           <Link
             href="/inspect"
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-ink text-white font-semibold hover:bg-neutral-800 transition"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-md bg-saint text-white font-semibold hover:bg-emerald-600 transition shadow-lg shadow-emerald-900/40"
           >
             Web Inspector →
           </Link>
           <Link
             href="/cli"
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-md border border-neutral-300 text-neutral-800 font-medium hover:bg-neutral-100 transition"
+            className="lt-btn-secondary px-6 py-3"
           >
             Baixar CLI
           </Link>
         </div>
       </section>
-    </main>
+      </main>
+    </>
   );
 }

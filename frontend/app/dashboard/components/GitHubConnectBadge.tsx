@@ -119,9 +119,9 @@ export function GitHubConnectBadge() {
         role="status"
         aria-live="polite"
       >
-        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-700">
+        <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-neutral-700/60 text-neutral-300">
           <span
-            className="w-2 h-2 rounded-full bg-neutral-400"
+            className="w-2 h-2 rounded-full bg-neutral-500"
             aria-hidden="true"
           />
           Status do GitHub indisponível
@@ -129,7 +129,7 @@ export function GitHubConnectBadge() {
         <button
           type="button"
           onClick={() => void refresh()}
-          className="text-neutral-700 hover:text-ink underline underline-offset-2"
+          className="text-neutral-300 hover:text-paper underline underline-offset-2"
         >
           Tentar novamente
         </button>
@@ -153,7 +153,7 @@ export function GitHubConnectBadge() {
             ref={disconnectBtnRef}
             type="button"
             onClick={openDisconnectModal}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-neutral-700 hover:text-sinner hover:bg-sinner-bg border border-neutral-200 hover:border-sinner/30 transition"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm text-neutral-300 hover:text-red-300 hover:bg-red-500/10 border border-neutral-800/60 hover:border-red-500/40 transition"
           >
             Desconectar
           </button>
@@ -161,7 +161,7 @@ export function GitHubConnectBadge() {
           <button
             type="button"
             onClick={handleConnect}
-            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+            className="inline-flex items-center gap-2 px-4 py-1.5 rounded-md bg-saint text-white text-sm font-semibold hover:bg-emerald-600 transition shadow-md shadow-emerald-900/40"
           >
             <GitHubGlyph />
             Conectar GitHub
@@ -179,7 +179,7 @@ export function GitHubConnectBadge() {
 
       {error && (
         <div
-          className="mt-3 bg-sinner-bg border border-sinner/20 text-sinner text-sm rounded-md px-4 py-3"
+          className="mt-3 lt-alert-danger"
           role="alert"
           aria-live="polite"
         >
@@ -218,12 +218,12 @@ function ConnectedPill({ scopes }: { scopes?: string[] }) {
     scopes && scopes.length > 0 ? scopes.join(" · ") : "repo · read:org";
   return (
     <span
-      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-saint-bg border border-saint/20 text-saint text-sm font-semibold"
+      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-400/30 text-emerald-200 text-sm font-semibold"
       aria-label={`GitHub conectado com escopos ${scopeLabel}`}
     >
       <GitHubGlyph />
       <span>GitHub conectado</span>
-      <span className="font-normal text-saint/80 hidden sm:inline">
+      <span className="font-normal text-emerald-300/70 hidden sm:inline">
         ({scopeLabel})
       </span>
     </span>
@@ -233,11 +233,11 @@ function ConnectedPill({ scopes }: { scopes?: string[] }) {
 function NotConnectedPill() {
   return (
     <span
-      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-neutral-100 border border-neutral-200 text-neutral-700 text-sm font-semibold"
+      className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-neutral-700/60 text-neutral-300 text-sm font-semibold"
       aria-label="GitHub não conectado"
     >
       <span
-        className="w-2 h-2 rounded-full bg-neutral-400"
+        className="w-2 h-2 rounded-full bg-neutral-500"
         aria-hidden="true"
       />
       GitHub não conectado
@@ -256,7 +256,7 @@ function AfterDisconnectBanner({
 }) {
   return (
     <div
-      className="mt-4 bg-saint-bg border border-saint/20 rounded-md px-4 py-3 text-sm text-ink"
+      className="mt-4 lt-alert-info"
       role="status"
       aria-live="polite"
     >
@@ -265,13 +265,13 @@ function AfterDisconnectBanner({
           {alreadyRevoked
             ? "GitHub já estava desconectado deste lado."
             : "GitHub desconectado localmente."}{" "}
-          Para revogar <strong>completamente</strong> a autorização do
+          Para revogar <strong className="text-paper">completamente</strong> a autorização do
           Lintty no GitHub, abra{" "}
           <a
             href={upstreamRevokeUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="underline underline-offset-2 font-semibold text-saint hover:text-[#0c3d2e]"
+            className="underline underline-offset-2 font-semibold text-emerald-200 hover:text-emerald-100"
           >
             github.com/settings/applications
           </a>
@@ -280,7 +280,7 @@ function AfterDisconnectBanner({
         <button
           type="button"
           onClick={onDismiss}
-          className="text-neutral-500 hover:text-ink p-1 -m-1"
+          className="text-neutral-400 hover:text-paper p-1 -m-1"
           aria-label="Fechar aviso"
         >
           <svg

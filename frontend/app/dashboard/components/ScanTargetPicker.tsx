@@ -154,7 +154,7 @@ export function ScanTargetPicker({
       />
 
       {/* Tabs */}
-      <div role="tablist" aria-label="Tipo de alvo" id={tablistId} className="flex gap-1 border-b border-neutral-200">
+      <div role="tablist" aria-label="Tipo de alvo" id={tablistId} className="flex gap-1 border-b border-neutral-800/60">
         <TabButton
           active={tab === "sln"}
           onClick={() => switchTab("sln")}
@@ -244,14 +244,14 @@ export function ScanTargetPicker({
       )}
 
       {/* Footer status */}
-      <div className="text-sm text-neutral-600">
+      <div className="text-sm text-neutral-400">
         {selection.length === 0 ? (
           <span>Selecione 1 solution OU 1+ projetos para continuar.</span>
         ) : tab === "sln" || slnSelected ? (
           <span>1 solution selecionada → 1 PDF.</span>
         ) : (
           <span>
-            <strong className="text-ink">{csprojSelected.length}</strong>{" "}
+            <strong className="text-paper">{csprojSelected.length}</strong>{" "}
             {csprojSelected.length === 1 ? "projeto selecionado" : "projetos selecionados"}{" "}
             → 1 PDF combinado.
           </span>
@@ -261,7 +261,7 @@ export function ScanTargetPicker({
       {errorText && (
         <p
           id={errorId}
-          className="text-sm text-sinner"
+          className="text-sm text-red-300"
           role="alert"
           aria-live="polite"
         >
@@ -275,7 +275,7 @@ export function ScanTargetPicker({
           onClick={onPrimary}
           disabled={!canSubmit}
           aria-describedby={errorText ? errorId : undefined}
-          className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="lt-btn-primary text-sm px-5 py-2 disabled:opacity-50"
         >
           {busy ? "Salvando…" : primaryLabel}
         </button>
@@ -284,7 +284,7 @@ export function ScanTargetPicker({
             type="button"
             onClick={onSecondary}
             disabled={!canSubmit}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition disabled:opacity-50 disabled:cursor-not-allowed"
+            className="lt-btn-secondary text-sm px-5 py-2 disabled:opacity-50"
           >
             {secondaryLabel}
           </button>
@@ -294,7 +294,7 @@ export function ScanTargetPicker({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="inline-flex items-center text-sm text-neutral-600 hover:text-ink underline decoration-neutral-300 underline-offset-2 transition disabled:opacity-50"
+            className="inline-flex items-center text-sm text-neutral-400 hover:text-paper underline decoration-neutral-600 underline-offset-2 transition disabled:opacity-50"
           >
             {cancelLabel}
           </button>
@@ -308,15 +308,15 @@ export function ScanTargetPicker({
 
 function NoticeCard() {
   return (
-    <div className="rounded-md border border-saint/20 bg-saint-bg/40 px-4 py-3 text-sm text-neutral-700">
+    <div className="lt-alert-info">
       <p>
-        <span className="font-semibold text-saint">Dica:</span>{" "}
+        <span className="font-semibold text-emerald-200">Dica:</span>{" "}
         Quer detecção automática e específica? Adicione um arquivo{" "}
-        <code className="font-mono text-xs bg-white border border-neutral-200 rounded px-1 py-0.5">
+        <code className="font-mono text-xs bg-white/5 border border-neutral-800/60 text-paper rounded px-1 py-0.5">
           lintty.yml
         </code>{" "}
         na raiz do projeto com a chave{" "}
-        <code className="font-mono text-xs bg-white border border-neutral-200 rounded px-1 py-0.5">
+        <code className="font-mono text-xs bg-white/5 border border-neutral-800/60 text-paper rounded px-1 py-0.5">
           projects:
         </code>{" "}
         declarando o que escanear — o Lintty resolve sozinho a cada execução.
@@ -328,11 +328,11 @@ function NoticeCard() {
 function TruncatedBanner() {
   return (
     <div
-      className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+      className="lt-alert-warning"
       role="status"
     >
-      <p className="font-medium">Lista truncada.</p>
-      <p className="mt-1 text-amber-800/90">
+      <p className="font-medium text-amber-300">Lista truncada.</p>
+      <p className="mt-1">
         Repositório muito grande para uma listagem completa via API do
         GitHub. Foram listados os primeiros candidatos. Para repos com mais
         de 100k arquivos use a CLI local.
@@ -364,7 +364,7 @@ function SearchInput({
         value={value}
         onChange={(ev) => onChange(ev.target.value)}
         placeholder={placeholder}
-        className="w-full px-4 py-2 border border-neutral-300 rounded-md text-sm bg-white focus:border-saint focus:outline-none transition"
+        className="lt-input"
       />
     </div>
   );
@@ -396,8 +396,8 @@ function TabButton({
       onClick={onClick}
       className={`px-4 py-2 -mb-px border-b-2 text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed ${
         active
-          ? "border-saint text-saint"
-          : "border-transparent text-neutral-600 hover:text-ink hover:border-neutral-300"
+          ? "border-emerald-400 text-emerald-200"
+          : "border-transparent text-neutral-400 hover:text-paper hover:border-neutral-700/60"
       }`}
     >
       {children}
@@ -424,7 +424,7 @@ function CsprojToolbar({
 }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-neutral-600">
+      <span className="text-neutral-400">
         {selectedCount === 0
           ? `${visibleCount} disponíve${visibleCount === 1 ? "l" : "is"}`
           : `${selectedCount} selecionado${selectedCount === 1 ? "" : "s"}`}
@@ -435,7 +435,7 @@ function CsprojToolbar({
             type="button"
             onClick={onClear}
             disabled={disabled}
-            className="text-neutral-700 hover:text-ink underline underline-offset-2 disabled:opacity-50"
+            className="text-neutral-300 hover:text-paper underline underline-offset-2 disabled:opacity-50"
           >
             Limpar
           </button>
@@ -445,7 +445,7 @@ function CsprojToolbar({
             type="button"
             onClick={allVisibleSelected ? onClear : onSelectAllVisible}
             disabled={disabled}
-            className="text-neutral-700 hover:text-ink underline underline-offset-2 disabled:opacity-50"
+            className="text-neutral-300 hover:text-paper underline underline-offset-2 disabled:opacity-50"
           >
             {allVisibleSelected ? "Desmarcar todos" : "Selecionar todos"}
           </button>
@@ -472,8 +472,8 @@ function SlnRow({
     <label
       className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
         selected
-          ? "border-saint/60 bg-saint-bg/60 ring-1 ring-saint/20"
-          : "border-neutral-200 bg-white hover:border-neutral-300"
+          ? "border-emerald-500/60 bg-emerald-500/10 ring-1 ring-emerald-500/20"
+          : "border-neutral-800/60 bg-neutral-900/40 hover:border-neutral-700/70"
       } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
     >
       <input
@@ -482,10 +482,10 @@ function SlnRow({
         checked={selected}
         onChange={onPick}
         disabled={disabled}
-        className="w-4 h-4 accent-saint shrink-0"
+        className="w-4 h-4 accent-emerald-500 shrink-0"
       />
       <KindBadge kind="sln" />
-      <code className="flex-1 min-w-0 font-mono text-sm text-ink truncate">
+      <code className="flex-1 min-w-0 font-mono text-sm text-paper truncate">
         {path}
       </code>
     </label>
@@ -507,8 +507,8 @@ function CsprojRow({
     <label
       className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition ${
         selected
-          ? "border-saint/60 bg-saint-bg/60 ring-1 ring-saint/20"
-          : "border-neutral-200 bg-white hover:border-neutral-300"
+          ? "border-emerald-500/60 bg-emerald-500/10 ring-1 ring-emerald-500/20"
+          : "border-neutral-800/60 bg-neutral-900/40 hover:border-neutral-700/70"
       } ${disabled ? "opacity-60 cursor-not-allowed" : ""}`}
     >
       <input
@@ -516,10 +516,10 @@ function CsprojRow({
         checked={selected}
         onChange={onToggle}
         disabled={disabled}
-        className="w-4 h-4 accent-saint shrink-0"
+        className="w-4 h-4 accent-emerald-500 shrink-0"
       />
       <KindBadge kind="csproj" />
-      <code className="flex-1 min-w-0 font-mono text-sm text-ink truncate">
+      <code className="flex-1 min-w-0 font-mono text-sm text-paper truncate">
         {path}
       </code>
     </label>
@@ -529,8 +529,8 @@ function CsprojRow({
 function KindBadge({ kind }: { kind: PreflightCandidateKind }) {
   const cls =
     kind === "sln"
-      ? "text-saint bg-saint-bg border-saint/30"
-      : "text-neutral-700 bg-neutral-100 border-neutral-200";
+      ? "text-emerald-200 bg-emerald-500/10 border-emerald-400/30"
+      : "text-neutral-300 bg-white/5 border-neutral-700/60";
   return (
     <span
       className={`inline-flex items-center text-[10px] font-semibold uppercase tracking-wider rounded border px-1.5 py-0.5 shrink-0 ${cls}`}
@@ -544,17 +544,17 @@ function KindBadge({ kind }: { kind: PreflightCandidateKind }) {
 
 function EmptyTab({ message }: { message: string }) {
   return (
-    <div className="bg-white border border-dashed border-neutral-300 rounded-lg p-6 text-center">
-      <p className="text-sm text-neutral-600">{message}</p>
+    <div className="bg-white/[0.02] border border-dashed border-neutral-700/60 rounded-lg p-6 text-center">
+      <p className="text-sm text-neutral-400">{message}</p>
     </div>
   );
 }
 
 function NoMatchMessage({ query }: { query: string }) {
   return (
-    <div className="text-center text-sm text-neutral-600 py-6">
+    <div className="text-center text-sm text-neutral-400 py-6">
       Nenhum candidato bate com{" "}
-      <strong className="text-ink">{query}</strong>.
+      <strong className="text-paper">{query}</strong>.
     </div>
   );
 }

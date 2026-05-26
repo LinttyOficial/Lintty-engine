@@ -23,6 +23,7 @@ import { useEffect, useRef, useState } from "react";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { SkipLink } from "@/components/SkipLink";
+import { AuroraPageHeader } from "@/components/HeroAurora";
 import { apiFetch } from "@/lib/api";
 import { InspectForm, type InspectFormPayload } from "./components/InspectForm";
 import { InspectRunning } from "./components/InspectRunning";
@@ -76,6 +77,17 @@ export default function InspectPage() {
   const [submitting, setSubmitting] = useState(false);
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [urlError, setUrlError] = useState<string | null>(null);
+
+  // URL pré-preenchida vinda do InlineInspectInput do hero (`?url=...`).
+  // Lemos via window.location no mount pra evitar Suspense boundary do
+  // useSearchParams sob static export.
+  const [prefilledUrl, setPrefilledUrl] = useState<string>("");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const sp = new URLSearchParams(window.location.search);
+    const u = sp.get("url");
+    if (u) setPrefilledUrl(u);
+  }, []);
 
   // Polling state
   const [jobId, setJobId] = useState<string>("");
@@ -382,31 +394,32 @@ export default function InspectPage() {
     <>
       <SkipLink />
       <Header />
-      <main id="main" className="px-6 py-12 md:py-16">
-        <div className="max-w-2xl mx-auto">
-          <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-3">
-            Web Inspector &middot; V0
-          </p>
-          <h1 className="text-3xl md:text-4xl font-bold leading-tight tracking-tight">
-            Cole a URL do GitHub. Receba o laudo PDF.
-          </h1>
-          <p className="mt-4 text-neutral-700">
+      <AuroraPageHeader
+        maxWidthClass="max-w-2xl"
+        eyebrow="Web Inspector · V0"
+        title="Cole a URL do GitHub. Receba o laudo PDF."
+        subtitle={
+          <>
             Mesmo motor determinístico do CLI, rodando no nosso backend. Clone efêmero,
             descartado em até 60 segundos. Para uso recorrente ou repo privado,{" "}
             <Link
               href="/cli"
-              className="underline decoration-neutral-400 underline-offset-2 hover:text-ink hover:decoration-ink"
+              className="underline decoration-emerald-400/50 underline-offset-2 hover:text-paper hover:decoration-emerald-300"
             >
               baixe o CLI local
             </Link>{" "}
             — o código nunca sai da sua máquina.
-          </p>
-
+          </>
+        }
+      />
+      <main id="main" className="lt-dark-glow lt-noise px-6 py-12 md:py-16 text-paper">
+        <div className="max-w-2xl mx-auto">
           {state === "form" && (
             <InspectForm
               globalError={globalError}
               submitting={submitting}
               urlError={urlError}
+              defaultUrl={prefilledUrl}
               onSubmit={handleSubmit}
               onClearErrors={() => {
                 setGlobalError(null);

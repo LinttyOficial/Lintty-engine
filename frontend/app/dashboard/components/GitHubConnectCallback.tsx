@@ -61,19 +61,19 @@ export function GitHubConnectCallback() {
   if (outcome.kind === "success") {
     return (
       <div
-        className="mb-6 bg-saint-bg border border-saint/20 rounded-md px-4 py-3 text-sm text-saint"
+        className="mb-6 lt-alert-info"
         role="status"
         aria-live="polite"
       >
         <div className="flex items-start gap-3">
-          <p className="flex-1 font-semibold">
+          <p className="flex-1 font-semibold text-emerald-200">
             GitHub conectado. Você já pode importar repositórios das suas
             organizações.
           </p>
           <button
             type="button"
             onClick={() => setOutcome(null)}
-            className="text-saint hover:text-[#0c3d2e] p-1 -m-1"
+            className="text-emerald-200 hover:text-emerald-100 p-1 -m-1"
             aria-label="Fechar aviso"
           >
             <DismissIcon />
@@ -87,21 +87,21 @@ export function GitHubConnectCallback() {
     <div
       ref={errorBannerRef}
       tabIndex={-1}
-      className="mb-6 bg-sinner-bg border border-sinner/20 rounded-md px-4 py-3 text-sm text-sinner outline-none"
+      className="mb-6 lt-alert-danger outline-none"
       role="alert"
       aria-live="assertive"
     >
       <div className="flex items-start gap-3">
         <div className="flex-1">
-          <p className="font-semibold">Não foi possível conectar o GitHub.</p>
-          <p className="mt-1 text-neutral-700">
+          <p className="font-semibold text-red-300">Não foi possível conectar o GitHub.</p>
+          <p className="mt-1 text-neutral-300">
             {humanizeReason(outcome.reason)}
           </p>
         </div>
         <button
           type="button"
           onClick={() => setOutcome(null)}
-          className="text-sinner hover:text-[#5a1717] p-1 -m-1"
+          className="text-red-300 hover:text-red-200 p-1 -m-1"
           aria-label="Fechar aviso"
         >
           <DismissIcon />

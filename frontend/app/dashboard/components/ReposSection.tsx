@@ -136,20 +136,20 @@ export function ReposSection({ orgName }: ReposSectionProps) {
 
   return (
     <section className="max-w-3xl mx-auto" aria-labelledby="repos-heading">
-      <p className="text-xs font-semibold tracking-widest text-neutral-500 uppercase mb-3">
+      <p className="text-xs font-semibold tracking-widest text-emerald-300/80 uppercase mb-3 font-mono">
         Dashboard &middot; Beta
       </p>
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
           <h1
             id="repos-heading"
-            className="text-3xl md:text-4xl font-bold tracking-tight"
+            className="text-3xl md:text-4xl font-bold tracking-tight text-paper"
           >
             Repositórios
           </h1>
-          <p className="mt-2 text-neutral-700">
+          <p className="mt-2 text-neutral-300">
             Repositórios de{" "}
-            <strong className="text-ink">{orgName}</strong> disponíveis para
+            <strong className="text-paper">{orgName}</strong> disponíveis para
             análise.
           </p>
         </div>
@@ -158,7 +158,7 @@ export function ReposSection({ orgName }: ReposSectionProps) {
             ref={importBtnRef}
             type="button"
             onClick={handleOpenImportModal}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-md border border-neutral-300 text-neutral-800 text-sm font-semibold hover:bg-neutral-100 transition"
+            className="lt-btn-secondary px-5 py-2.5"
           >
             <svg
               width="14"
@@ -175,7 +175,7 @@ export function ReposSection({ orgName }: ReposSectionProps) {
             ref={addBtnRef}
             type="button"
             onClick={handleOpenModal}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition"
+            className="lt-btn-primary px-5 py-2.5"
           >
             <span aria-hidden="true">+</span>
             Adicionar repositório
@@ -187,8 +187,8 @@ export function ReposSection({ orgName }: ReposSectionProps) {
         <div
           className={
             toast.kind === "success"
-              ? "mt-6 bg-saint-bg border border-saint/20 text-saint text-sm rounded-md px-4 py-3"
-              : "mt-6 bg-neutral-50 border border-neutral-200 text-neutral-700 text-sm rounded-md px-4 py-3"
+              ? "mt-6 lt-alert-info"
+              : "mt-6 bg-white/5 border border-neutral-800/60 text-neutral-300 text-sm rounded-md px-4 py-3"
           }
           role="status"
           aria-live="polite"

@@ -103,7 +103,7 @@ export default function RepoDetailPage() {
     <>
       <SkipLink />
       <Header />
-      <main id="main" className="px-6 py-12 md:py-16">
+      <main id="main" className="lt-dark-glow lt-noise px-6 py-12 md:py-16 text-paper">
         {authLoading && <PageSkeleton />}
         {!authLoading && networkError && <NetworkErrorState />}
         {!authLoading && !networkError && isAuthenticated && (
@@ -255,7 +255,7 @@ function BackLink() {
   return (
     <Link
       href="/dashboard"
-      className="inline-flex items-center gap-1.5 text-sm text-neutral-600 hover:text-ink transition"
+      className="inline-flex items-center gap-1.5 text-sm text-neutral-400 hover:text-paper transition"
     >
       <svg
         width="14"
@@ -280,11 +280,11 @@ function RepoHeader({ repo, label }: { repo: RepoDetail; label: string }) {
     <header>
       <p className="text-xs uppercase tracking-wider text-neutral-500">
         Repositórios <span aria-hidden="true">›</span>{" "}
-        <span className="font-mono normal-case tracking-normal text-neutral-700">
+        <span className="font-mono normal-case tracking-normal text-neutral-300">
           {label}
         </span>
       </p>
-      <h1 className="mt-2 text-2xl md:text-3xl font-bold tracking-tight text-ink break-all">
+      <h1 className="mt-2 text-2xl md:text-3xl font-bold tracking-tight text-paper break-all">
         {label}
       </h1>
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -292,13 +292,13 @@ function RepoHeader({ repo, label }: { repo: RepoDetail; label: string }) {
           href={repo.githubUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm text-neutral-600 hover:text-ink underline decoration-neutral-300 underline-offset-2 break-all"
+          className="text-sm text-neutral-400 hover:text-paper underline decoration-emerald-400/40 underline-offset-2 break-all"
         >
           {repo.githubUrl}
         </a>
         {repo.isPrivate && (
           <span
-            className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-700 bg-neutral-100 border border-neutral-200 rounded px-1.5 py-0.5"
+            className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-300 bg-white/5 border border-neutral-700/60 rounded px-1.5 py-0.5"
             title="Repositório privado"
           >
             privado
@@ -431,15 +431,15 @@ function ReadyCard({
   return (
     <section
       aria-labelledby="analyze-title"
-      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+      className="lt-card-form p-6 md:p-8"
     >
       <h2
         id="analyze-title"
-        className="text-lg font-semibold tracking-tight text-ink"
+        className="text-lg font-semibold tracking-tight text-paper"
       >
         Analisar repositório
       </h2>
-      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+      <p className="mt-2 text-sm text-neutral-300 leading-relaxed">
         O Lintty vai clonar o repositório, rodar o motor Roslyn e gerar
         um laudo PDF determinístico. O mesmo commit produz o mesmo PDF
         byte-a-byte.
@@ -455,7 +455,7 @@ function ReadyCard({
         <button
           type="button"
           onClick={() => setEditing(true)}
-          className="mt-3 text-sm text-neutral-600 hover:text-ink underline decoration-neutral-300 underline-offset-2 transition"
+          className="mt-3 text-sm text-neutral-400 hover:text-paper underline decoration-emerald-400/40 underline-offset-2 transition"
         >
           Trocar alvo
         </button>
@@ -473,20 +473,20 @@ function ReadyCard({
 
       {needsGithub && !githubChecking && (
         <div
-          className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mt-4 lt-alert-warning"
           role="status"
         >
           <p className="font-medium">
             Conecte o GitHub para analisar repositórios privados.
           </p>
-          <p className="mt-1 text-amber-800/90">
+          <p className="mt-1">
             Privados exigem um token OAuth do usuário com escopo{" "}
             <code className="font-mono">repo</code>. Conexão pública (PAT)
             não basta.
           </p>
           <a
             href={gitHubConnectStartUrl()}
-            className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+            className="mt-3 lt-btn-primary text-sm px-4 py-2"
           >
             Conectar GitHub
           </a>
@@ -495,7 +495,7 @@ function ReadyCard({
 
       {trigger.kind === "error" && (
         <p
-          className="mt-4 text-sm text-sinner"
+          className="mt-4 text-sm text-red-300"
           role="alert"
           aria-live="polite"
         >
@@ -508,7 +508,7 @@ function ReadyCard({
           type="button"
           onClick={handleTrigger}
           disabled={disabled}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="lt-btn-primary text-sm px-5 py-2.5 disabled:opacity-50"
         >
           {ctaLabel}
         </button>
@@ -525,8 +525,8 @@ function TargetSummary({ preflight }: { preflight: PreflightResult }) {
         ? "Alvo (escolhido por você)"
         : `Alvos (${saved.length}) — combinados em 1 PDF`;
     return (
-      <div className="mt-5 rounded-md border border-saint/30 bg-saint-bg/60 px-4 py-3">
-        <p className="text-xs font-semibold uppercase tracking-wider text-saint">
+      <div className="mt-5 lt-alert-info">
+        <p className="text-xs font-semibold uppercase tracking-wider text-emerald-300">
           {heading}
         </p>
         <ul
@@ -535,7 +535,7 @@ function TargetSummary({ preflight }: { preflight: PreflightResult }) {
           {saved.map((path) => (
             <li
               key={path}
-              className="flex items-baseline gap-2 font-mono text-sm text-ink break-all"
+              className="flex items-baseline gap-2 font-mono text-sm text-paper break-all"
             >
               <KindBadge kind={kindFromPath(path)} />
               <span>{path}</span>
@@ -553,11 +553,11 @@ function TargetSummary({ preflight }: { preflight: PreflightResult }) {
 
 function AutoDetectedSummary({ auto }: { auto: PreflightAutoDetected }) {
   return (
-    <div className="mt-5 rounded-md border border-neutral-200 bg-neutral-50 px-4 py-3">
-      <p className="text-xs font-semibold uppercase tracking-wider text-neutral-600">
+    <div className="mt-5 rounded-md border border-neutral-800/60 bg-white/5 px-4 py-3">
+      <p className="text-xs font-semibold uppercase tracking-wider text-neutral-400">
         Alvo (detectado automaticamente)
       </p>
-      <p className="mt-2 flex items-baseline gap-2 font-mono text-sm text-ink break-all">
+      <p className="mt-2 flex items-baseline gap-2 font-mono text-sm text-paper break-all">
         <KindBadge kind={auto.kind} />
         <span>{auto.path}</span>
       </p>
@@ -575,7 +575,7 @@ function AutoDetectedSummary({ auto }: { auto: PreflightAutoDetected }) {
 function KindBadge({ kind }: { kind: PreflightAutoDetectedKind }) {
   return (
     <span
-      className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-700 bg-white border border-neutral-200 rounded px-1.5 py-0.5 shrink-0"
+      className="inline-flex items-center text-[10px] font-semibold uppercase tracking-wider text-neutral-300 bg-white/5 border border-neutral-700/60 rounded px-1.5 py-0.5 shrink-0"
       title={describeCandidateKind(kind)}
     >
       {kind}
@@ -634,14 +634,14 @@ function ChangeTargetPanel({
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-neutral-200 bg-neutral-50/50 p-4 md:p-5 space-y-4">
+    <div className="mt-4 rounded-lg border border-neutral-800/60 bg-white/[0.03] p-4 md:p-5 space-y-4">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-semibold text-ink">Trocar alvo</h3>
+        <h3 className="text-sm font-semibold text-paper">Trocar alvo</h3>
         <button
           type="button"
           onClick={() => void save([])}
           disabled={busy}
-          className="text-xs text-neutral-600 hover:text-ink underline decoration-neutral-300 underline-offset-2 transition disabled:opacity-50"
+          className="text-xs text-neutral-400 hover:text-paper underline decoration-emerald-400/40 underline-offset-2 transition disabled:opacity-50"
         >
           Voltar para auto-detect
         </button>
@@ -745,34 +745,34 @@ function NeedsConfigCard({
   return (
     <section
       aria-labelledby="config-title"
-      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+      className="lt-card-form p-6 md:p-8"
     >
       <h2
         id="config-title"
-        className="text-lg font-semibold tracking-tight text-ink"
+        className="text-lg font-semibold tracking-tight text-paper"
       >
         Configurar alvo de scan
       </h2>
-      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+      <p className="mt-2 text-sm text-neutral-300 leading-relaxed">
         {preflight.reason ??
           "Vamos precisar saber o que escanear neste repositório."}
       </p>
 
       {needsGithub && !githubChecking && (
         <div
-          className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mt-4 lt-alert-warning"
           role="status"
         >
           <p className="font-medium">
             Conecte o GitHub para analisar repositórios privados.
           </p>
-          <p className="mt-1 text-amber-800/90">
+          <p className="mt-1">
             Você pode salvar a configuração agora; a análise só dispara
             depois que o token estiver ativo.
           </p>
           <a
             href={gitHubConnectStartUrl()}
-            className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+            className="mt-3 lt-btn-primary text-sm px-4 py-2"
           >
             Conectar GitHub
           </a>
@@ -809,27 +809,27 @@ function NoDotnetCard({
   return (
     <section
       aria-labelledby="no-dotnet-title"
-      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+      className="lt-card-form p-6 md:p-8"
     >
       <h2
         id="no-dotnet-title"
-        className="text-lg font-semibold tracking-tight text-ink"
+        className="text-lg font-semibold tracking-tight text-paper"
       >
         Sem projeto .NET detectável
       </h2>
-      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+      <p className="mt-2 text-sm text-neutral-300 leading-relaxed">
         {reason ??
           "Não encontramos .sln, .csproj ou lintty.yml na árvore deste repositório."}
       </p>
-      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+      <p className="mt-2 text-sm text-neutral-300 leading-relaxed">
         Se você acabou de adicionar um arquivo, aguarde alguns minutos e
-        clique em <strong className="text-ink">Recarregar</strong>.
+        clique em <strong className="text-paper">Recarregar</strong>.
       </p>
       <div className="mt-5">
         <button
           type="button"
           onClick={onReload}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition"
+          className="lt-btn-secondary text-sm px-4 py-2"
         >
           Recarregar
         </button>
@@ -891,15 +891,15 @@ function TriggerCard({
   return (
     <section
       aria-labelledby="analyze-title"
-      className="bg-white border border-neutral-200 rounded-xl shadow-sm p-6 md:p-8"
+      className="lt-card-form p-6 md:p-8"
     >
       <h2
         id="analyze-title"
-        className="text-lg font-semibold tracking-tight text-ink"
+        className="text-lg font-semibold tracking-tight text-paper"
       >
         Analisar repositório
       </h2>
-      <p className="mt-2 text-sm text-neutral-700 leading-relaxed">
+      <p className="mt-2 text-sm text-neutral-300 leading-relaxed">
         O Lintty vai clonar o repositório, rodar o motor Roslyn e gerar
         um laudo PDF determinístico. O mesmo commit produz o mesmo PDF
         byte-a-byte.
@@ -911,20 +911,20 @@ function TriggerCard({
 
       {needsGithub && !githubChecking && (
         <div
-          className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+          className="mt-4 lt-alert-warning"
           role="status"
         >
           <p className="font-medium">
             Conecte o GitHub para analisar repositórios privados.
           </p>
-          <p className="mt-1 text-amber-800/90">
+          <p className="mt-1">
             Privados exigem um token OAuth do usuário com escopo{" "}
             <code className="font-mono">repo</code>. Conexão pública (PAT)
             não basta.
           </p>
           <a
             href={gitHubConnectStartUrl()}
-            className="mt-3 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+            className="mt-3 lt-btn-primary text-sm px-4 py-2"
           >
             Conectar GitHub
           </a>
@@ -933,7 +933,7 @@ function TriggerCard({
 
       {state.kind === "error" && (
         <p
-          className="mt-4 text-sm text-sinner"
+          className="mt-4 text-sm text-red-300"
           role="alert"
           aria-live="polite"
         >
@@ -946,7 +946,7 @@ function TriggerCard({
           type="button"
           onClick={handleTrigger}
           disabled={disabled}
-          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-md bg-saint text-white text-sm font-semibold hover:bg-[#0c3d2e] transition disabled:opacity-50 disabled:cursor-not-allowed"
+          className="lt-btn-primary text-sm px-5 py-2.5 disabled:opacity-50"
         >
           {submitting ? "Disparando..." : "Analisar agora"}
         </button>
@@ -965,7 +965,7 @@ function HistorySection({ scans }: { scans: ScanSummary[] }) {
       <div className="flex items-baseline justify-between">
         <h2
           id="history-title"
-          className="text-lg font-semibold tracking-tight text-ink"
+          className="text-lg font-semibold tracking-tight text-paper"
         >
           Histórico
         </h2>
@@ -979,10 +979,10 @@ function HistorySection({ scans }: { scans: ScanSummary[] }) {
       </div>
 
       {total === 0 ? (
-        <div className="mt-4 bg-white border border-dashed border-neutral-300 rounded-xl p-8 text-center">
-          <p className="text-sm text-neutral-600">
+        <div className="mt-4 bg-white/[0.02] border border-dashed border-neutral-700/60 rounded-xl p-8 text-center">
+          <p className="text-sm text-neutral-400">
             Ainda não há scans deste repositório. Clique em{" "}
-            <strong className="text-ink">Analisar agora</strong> acima para
+            <strong className="text-paper">Analisar agora</strong> acima para
             começar.
           </p>
         </div>
@@ -1006,12 +1006,12 @@ function ScanRow({ scan }: { scan: ScanSummary }) {
   return (
     <Link
       href={`/dashboard/scans/${scan.publicId}/`}
-      className="block bg-white border border-neutral-200 rounded-xl p-4 hover:border-neutral-300 transition"
+      className="block lt-card-soft bg-neutral-900/40 rounded-xl p-4 transition"
     >
       <div className="flex items-center justify-between gap-4">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <code className="text-xs font-mono text-neutral-700">
+            <code className="text-xs font-mono text-neutral-300">
               {shortId}
             </code>
             <StatusPill status={scan.status} />
@@ -1053,23 +1053,23 @@ function StatusPill({ status }: { status: ScanStatus }) {
 const STATUS_META: Record<ScanStatus, { label: string; cls: string }> = {
   queued: {
     label: "na fila",
-    cls: "text-neutral-700 bg-neutral-100 border-neutral-200",
+    cls: "text-neutral-300 bg-white/5 border-neutral-700/60",
   },
   running: {
     label: "rodando",
-    cls: "text-blue-800 bg-blue-50 border-blue-200",
+    cls: "text-sky-300 bg-sky-500/10 border-sky-400/30",
   },
   completed: {
     label: "ok",
-    cls: "text-saint bg-saint-bg border-saint/30",
+    cls: "text-emerald-200 bg-emerald-500/10 border-emerald-400/30",
   },
   failed: {
     label: "erro",
-    cls: "text-sinner bg-sinner-bg border-sinner/30",
+    cls: "text-red-300 bg-red-500/10 border-red-400/30",
   },
   cancelled: {
     label: "cancelado",
-    cls: "text-neutral-600 bg-neutral-50 border-neutral-200",
+    cls: "text-neutral-400 bg-white/[0.03] border-neutral-700/60",
   },
 };
 
@@ -1079,12 +1079,12 @@ function PageSkeleton() {
   return (
     <section className="max-w-3xl mx-auto space-y-6">
       <div className="lt-skeleton h-4 w-32" />
-      <div className="bg-white border border-neutral-200 rounded-xl p-8 shadow-sm">
+      <div className="lt-card-form p-8">
         <div className="lt-skeleton h-7 w-1/2 mb-4" />
         <div className="lt-skeleton h-4 w-2/3 mb-2" />
         <div className="lt-skeleton h-4 w-1/3" />
       </div>
-      <div className="bg-white border border-neutral-200 rounded-xl p-6 shadow-sm">
+      <div className="lt-card-form p-6">
         <div className="lt-skeleton h-5 w-40 mb-4" />
         <div className="lt-skeleton h-4 w-full mb-2" />
         <div className="lt-skeleton h-9 w-32 mt-4" />
@@ -1096,24 +1096,24 @@ function PageSkeleton() {
 function NetworkErrorState() {
   return (
     <section className="max-w-3xl mx-auto">
-      <div className="bg-sinner-bg border border-sinner/20 rounded-xl p-6 md:p-8">
-        <h1 className="text-2xl font-bold tracking-tight text-sinner">
+      <div className="lt-card-form p-6 md:p-8" style={{ borderColor: "rgba(220, 38, 38, 0.35)" }}>
+        <h1 className="text-2xl font-bold tracking-tight text-red-300">
           Backend indisponível
         </h1>
-        <p className="mt-3 text-neutral-700 text-sm">
+        <p className="mt-3 text-neutral-300 text-sm">
           Não conseguimos contatar o servidor para verificar sua sessão.
         </p>
         <div className="mt-6 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+            className="lt-btn-primary text-sm px-4 py-2"
           >
             Tentar novamente
           </button>
           <Link
             href="/dashboard"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition"
+            className="lt-btn-secondary text-sm px-4 py-2"
           >
             Voltar ao dashboard
           </Link>
@@ -1126,17 +1126,17 @@ function NetworkErrorState() {
 function NotFoundState() {
   return (
     <section className="max-w-3xl mx-auto">
-      <div className="bg-white border border-neutral-200 rounded-xl p-8 md:p-10 text-center">
-        <h1 className="text-xl font-bold tracking-tight text-ink">
+      <div className="lt-card-form p-8 md:p-10 text-center">
+        <h1 className="text-xl font-bold tracking-tight text-paper">
           Repositório não encontrado
         </h1>
-        <p className="mt-3 text-sm text-neutral-700 max-w-md mx-auto">
+        <p className="mt-3 text-sm text-neutral-300 max-w-md mx-auto">
           Este repositório não existe ou já foi removido. Volte ao
           dashboard e adicione-o de novo se necessário.
         </p>
         <Link
           href="/dashboard"
-          className="mt-6 inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+          className="mt-6 lt-btn-primary text-sm px-4 py-2"
         >
           Voltar ao dashboard
         </Link>
@@ -1155,25 +1155,26 @@ function LoadErrorState({
   return (
     <section className="max-w-3xl mx-auto">
       <div
-        className="bg-sinner-bg border border-sinner/20 rounded-xl p-6"
+        className="lt-card-form p-6"
+        style={{ borderColor: "rgba(220, 38, 38, 0.35)" }}
         role="alert"
         aria-live="polite"
       >
-        <p className="text-sinner font-semibold">
+        <p className="text-red-300 font-semibold">
           Não foi possível carregar este repositório
         </p>
-        <p className="mt-2 text-sm text-neutral-700">{message}</p>
+        <p className="mt-2 text-sm text-neutral-300">{message}</p>
         <div className="mt-4 flex flex-wrap gap-3">
           <button
             type="button"
             onClick={onRetry}
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-ink text-white text-sm font-semibold hover:bg-neutral-800 transition"
+            className="lt-btn-primary text-sm px-4 py-2"
           >
             Tentar novamente
           </button>
           <Link
             href="/dashboard"
-            className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-neutral-300 text-neutral-800 text-sm font-medium hover:bg-neutral-100 transition"
+            className="lt-btn-secondary text-sm px-4 py-2"
           >
             Voltar ao dashboard
           </Link>
